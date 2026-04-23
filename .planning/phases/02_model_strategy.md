@@ -19,14 +19,24 @@ For coding tasks, quality degrades more noticeably under aggressive quantization
 
 **Base models cannot perform tool calling or follow agentic instructions reliably.** Always use the `-instruct` or `-it` GGUF variant. Base model GGUFs are for fine-tuning or completion-only use cases and will not work with the agent loop.
 
-## Hierarchical Model Strategy
+## Model Mode
 
-1. **Planner model** — larger model handles task decomposition, tool selection, debugging strategy
-2. **Executor model** — smaller specialized coder handles code generation steps
+LoCoder supports two modes, switched via `mode` in `config.toml`. `locoder setup` auto-detects hardware and sets a default; the user can override at any time.
 
-Both models run as separate `llama-server` instances on different ports, or the same server is called with different system prompts depending on the task. At smaller RAM tiers, a single model does both roles.
+### `mode = "single"`
+One model handles everything: clarification, planning, code generation, and verification reasoning. Simpler, lower RAM requirement. Recommended for machines under ~20 GB combined RAM/VRAM.
 
-## Recommended Model Families (to be detailed in README)
+### `mode = "hierarchical"`
+Two models with separate roles, each running as its own `llama-server` instance on its own port (`planner_port` and `executor_port` in `config.toml`):
+
+1. **Planner model** (`planner_model`, default port `8081`) — handles the clarification session, task decomposition, tool selection, and debugging strategy. Should be a strong reasoning model (e.g. Mistral-Nemo-Instruct).
+2. **Executor model** (`executor_model`, default port `8082`) — handles code generation, file writes, and direct tool invocations. Should be a strong coding model (e.g. Qwen2.5-Coder-7B-Instruct).
+
+The orchestrator routes each step to the appropriate model based on the current ReAct phase. Recommended for machines with > 20 GB RAM/VRAM.
+
+Each server instance uses the shared `[inference.server_args]` block by default. Per-model overrides can be set under `[inference.server_args.planner]` and `[inference.server_args.executor]` — only keys that differ from the shared block need to be specified.
+
+## Recommended Model Families (registered in `registry.json`, detailed in README)
 
 - **Qwen2.5-Coder-Instruct** (0.5B → 32B) — best code quality per parameter; 128K context in larger variants. Native chat-template tool calling is unreliable without the `--jinja` flag; use GBNF grammar enforcement instead (see Phase 3).
 - **DeepSeek-Coder-V2-Instruct** (Lite: 16B active / 236B MoE) — trained on 1.17T code tokens, Fill-in-the-Middle (FIM) support; tool calling via GGUF not fully documented — rely on grammar enforcement.

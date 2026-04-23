@@ -26,12 +26,12 @@ Ollama internally wraps `llama.cpp`, but adds overhead and restricts several par
 
 | Component | Choice | Rationale |
 | :--- | :--- | :--- |
-| Inference backend | `llama-server` (llama.cpp) | Maximum performance, full hardware support |
+| Inference backend | `llama-server` (llama.cpp) | Maximum performance, full hardware support — managed automatically by LoCoder |
 | API interface | OpenAI-compatible (`/v1/`) | Framework-agnostic, swap models freely |
 | Python client | `openai` library | Standard, well-maintained |
 | Agent framework | LangChain + LangGraph | Mature tooling, graph-based orchestration |
 | In-process inference | `llama-cpp-python` (optional) | Edge devices, tight integration |
 | Vector store | ChromaDB | Local, no external service needed |
-| Embeddings | `nomic-embed-text` via llama-server | Local, no external API |
+| Embeddings | `nomic-embed-text` via `fastembed` | Local, no external API, no separate server |
 | Quantization target | Q5_K_M (coding) / Q4_K_M (fallback) | Best quality/size tradeoff for code |
 | Code execution | Sandboxed subprocess → Docker | Safety-first, incrementally hardened |

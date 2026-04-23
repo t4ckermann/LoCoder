@@ -3,7 +3,7 @@
 ## Priority-Ordered Tuning Steps
 
 1. **Match `--threads` to physical cores** — most impactful single change for CPU inference
-2. **Maximize `--n-gpu-layers`** — fill VRAM, reduce it only if OOM
+2. **Maximize `-ngl`** — fill VRAM, reduce it only if OOM
 3. **Use Q5_K_M quantization** for coding models (best quality/size tradeoff)
 4. **Enable `--flash-attn`** — free ~10–20% speedup on supported hardware
 5. **Set `--ctx-size` conservatively** — KV cache scales with context; only allocate what you need

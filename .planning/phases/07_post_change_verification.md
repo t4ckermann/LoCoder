@@ -1,6 +1,8 @@
 # Phase 7: Post-Change Verification
 
-After every file write or code generation step, the agent runs a **verification pass** before reporting success to the user. The goal is to catch problems at the source rather than surface them as runtime failures later.
+After the agent completes an entire task and all file writes are done, it runs a single **verification pass** before reporting success to the user. The goal is to catch problems at the source rather than surface them as runtime failures later.
+
+Verification is deliberately deferred to task completion — not triggered after each individual file write — to avoid false positives from partially-written state (e.g. mypy failing on an import that points to a file not yet written).
 
 ## Detection Strategy
 
@@ -23,22 +25,22 @@ Detection runs once at session start and the result is cached. The agent does no
 ## Verification Loop
 
 ```
-[Code written / file changed]
+Task complete — all files written
     ↓
-[Lint] — Run detected linter(s) on changed files only
+[Lint] — Run detected linter(s) on all files changed during the task
     ↓
 Errors? → [Thought] reason about the error → [Fix] → re-lint (max 3 retries)
     ↓
-[Format check] — Run formatter in check mode
+[Format check] — Run formatter in check mode across all changed files
     ↓
 Formatting needed? → Apply formatter automatically (no retry needed)
     ↓
-[Type check] — Run type checker if configured (mypy, tsc, etc.)
+[Type check] — Run type checker if configured (mypy, tsc, etc.) across all changed files
     ↓
-All clear → mark step complete and report to user
+All clear → report success to user
 ```
 
-Linting is scoped to **changed files only** where the tool supports it (e.g. `ruff check path/to/file.py`), avoiding noise from pre-existing issues in untouched code. Pre-existing violations in unchanged files are surfaced as a one-time warning at session start, not treated as agent failures.
+Verification is scoped to **files changed during the task** — linters are invoked with explicit file paths, not the whole project. This avoids noise from pre-existing issues in untouched code. Pre-existing violations in unchanged files are surfaced as a one-time warning at session start, not treated as agent failures.
 
 ## Retry Limit and Escalation
 

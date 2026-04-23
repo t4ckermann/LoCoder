@@ -1,21 +1,19 @@
 # Phase 3: Agent Architecture
 
-## Step 4: Clarification Session (Pre-Execution)
+## Clarification Session (Pre-Execution)
 
 Before any code is written or tools are invoked, the agent runs a **structured clarification loop** with the user. This surfaces ambiguities, missing constraints, and edge cases that would otherwise cause silent failures or require expensive re-work mid-task.
 
 ```
 User Request
     ↓
-[Analyze] — Identify ambiguities, implicit assumptions, missing info
+[clarify] — Identify ambiguities, implicit assumptions, missing info
     ↓
-[Clarify] — Ask the user targeted questions (one round, batched)
+State assumptions + start countdown
     ↓
-[Confirm] — Restate understanding and proposed approach
+User approves / corrects → confirmed task
     ↓
-User approves → proceed / User corrects → re-confirm
-    ↓
-Execution phase begins
+[plan] phase begins
 ```
 
 The clarification step asks about:
@@ -25,31 +23,50 @@ The clarification step asks about:
 - **Output expectations**: Should code be tested? Documented? What style/conventions?
 - **Destructive actions**: Any files or data that must not be touched?
 
-The questions are batched into a single message — not spread across multiple turns — to keep the interaction tight. The agent then restates its understanding before proceeding, giving the user a final checkpoint.
+The questions are batched into a single message — not spread across multiple turns — to keep the interaction tight. The agent then immediately states the assumptions it will proceed with, and starts a countdown:
 
-**Implementation note**: This phase uses the larger/planner model if a hierarchical setup is running. The clarification is stored in the conversation context and referenced throughout the execution phase to avoid drift.
+```
+I have a few questions, but I'll proceed with these assumptions in 10 seconds
+unless you reply:
+
+  1. Scope: I'll only modify `src/auth/login.py` and its test file.
+  2. Edge cases: I'll raise `ValueError` on empty input.
+  3. Style: I'll follow the existing code style (no docstrings unless present).
+
+[Proceeding in 10s — reply to change anything]
+```
+
+If the user replies before the countdown expires, the agent reads the correction, updates its assumptions, and confirms before proceeding. If no reply comes, it proceeds with the stated assumptions. This keeps simple tasks fast while still giving the user a meaningful checkpoint.
+
+**Countdown duration**: 10 seconds default, configurable in `config.toml` under `[agent] clarification_timeout = 10`. Set to `0` to disable the countdown and always wait for explicit confirmation.
+
+**Implementation note**: This phase uses the planner model in hierarchical mode. The confirmed assumptions are stored in the conversation context and referenced throughout the execution phase to avoid drift.
 
 ---
 
-## Step 5: The Agent Loop (ReAct)
+## The Agent Loop (ReAct)
 
-After the clarification session, the core loop is **ReAct** (Reasoning + Acting):
+After clarification, the agent runs a LangGraph state machine with the following nodes:
 
 ```
-Confirmed Task
+[clarify] → confirmed task
     ↓
-[Thought] — Plan the next step
+[plan]    — Reason about the next step; select a tool and arguments
     ↓
-[Action] — Select and invoke a tool
+[act]     — Invoke the selected tool
     ↓
-[Observation] — Process the tool output
+[observe] — Process the tool output; decide whether to loop or finish
     ↓
-Loop until [Answer] is ready
+loop back to [plan] until the task is complete
+    ↓
+[verify]  — Post-change verification pass (see Phase 7)
 ```
 
 llama.cpp enforces structured output at the **sampling level** using GBNF grammars or JSON Schema enforcement — the model is physically constrained to emit valid tool calls. This is the **primary mechanism LoCoder relies on**, because native chat-template tool calling is inconsistent across models (e.g. Qwen2.5-Coder emits tool calls as plain text content without grammar enforcement). Grammar enforcement sidesteps model-specific inconsistencies entirely.
 
-## Step 6: Tool Calling Implementation
+---
+
+## Tool Calling Implementation
 
 Tool calling works via two mechanisms in llama.cpp:
 
@@ -61,7 +78,7 @@ response_format = {
     "schema": {
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["read_file", "write_file", "run_code", "search"]},
+            "tool": {"type": "string", "enum": ["read_file", "write_file", "run_code", "list_directory", "search_codebase", "search_knowledge_base"]},
             "arguments": {"type": "object"}
         },
         "required": ["tool", "arguments"]
@@ -97,7 +114,9 @@ tools = [
 
 LoCoder defaults to grammar enforcement (Option A) for all models to guarantee consistency regardless of which model is loaded.
 
-## Step 7: Core Tools to Implement
+---
+
+## Core Tools to Implement
 
 ```python
 def read_file(path: str) -> str:
@@ -107,7 +126,8 @@ def write_file(path: str, content: str) -> str:
     """Write content to a file in the workspace."""
 
 def run_code(code: str, language: str = "python") -> dict:
-    """Execute code in an isolated subprocess. Returns stdout, stderr, exit_code."""
+    """Execute code in an isolated subprocess. Returns stdout, stderr, exit_code.
+    Sandboxed per Phase 8 — soft timeout, workspace-scoped, no shell=True."""
 
 def list_directory(path: str) -> list[str]:
     """List files in a directory."""
@@ -119,9 +139,11 @@ def search_knowledge_base(query: str) -> list[str]:
     """Retrieve relevant context from the RAG vector store."""
 ```
 
-`run_code` must sandbox execution. Start with subprocess + timeout + resource limits. A future phase can move to a proper sandbox (e.g., Firejail, gVisor, or Docker).
+Sandbox behaviour for `run_code` is defined in Phase 8 — soft timeout with user prompt, workspace path validation, no `shell=True`.
 
-## Step 8: Prompt Engineering
+---
+
+## Prompt Engineering
 
 The system prompt defines the agent's behavior contract:
 
