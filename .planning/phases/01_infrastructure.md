@@ -64,11 +64,24 @@ locoder pull qwen2.5-coder-7b --quant q4_k_m
 # Remove a locally installed model
 locoder remove qwen2.5-coder-7b
 
+# Upgrade: download a better model, then prompt to remove the old one
+locoder upgrade qwen2.5-coder-1.5b qwen2.5-coder-7b
+
 # Update the built-in model registry from the LoCoder GitHub repo
 locoder registry update
 ```
 
 > **Model selection is always done via `config.toml`** — edit `[inference.single] model` or `[inference.hierarchical] planner_model` / `executor_model` directly. There is no `locoder use` command.
+
+### `locoder upgrade <old-model> <new-model>`
+
+Workflow:
+1. Download `<new-model>` (same as `locoder pull`)
+2. On success, prompt: `"Remove '<old-model>' to free up disk space? [y/N]"`
+3. If confirmed, `locoder remove <old-model>`
+4. Print a reminder to update `config.toml` to point at the new model
+
+The remove step only runs after a fully successful download — a failed or interrupted download leaves the old model untouched. The config is never modified automatically; the user always edits it directly.
 
 ### Model registry
 
