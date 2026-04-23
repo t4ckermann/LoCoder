@@ -8,7 +8,10 @@ import tomli_w
 
 from locoder.hardware.detect import HardwareInfo
 
-DEFAULT_CONFIG_PATH = Path("~/.locoder/config.toml").expanduser()
+# Project-local config (preferred) — gitignored, per-project settings
+LOCAL_CONFIG_NAME = ".locoder.toml"
+# Global fallback — used when no local config exists
+GLOBAL_CONFIG_PATH = Path("~/.locoder/config.toml").expanduser()
 
 # Maps model_hint → registry short name
 _HINT_TO_MODEL: dict[str, str] = {
@@ -20,15 +23,37 @@ _PLANNER_MODEL = "mistral-nemo"
 
 
 def config_path() -> Path:
+    """
+    Resolution order:
+    1. LOCODER_CONFIG env var (explicit override)
+    2. .locoder.toml in the current working directory (project-local)
+    3. ~/.locoder/config.toml (global fallback)
+    """
     env = os.environ.get("LOCODER_CONFIG")
-    return Path(env).expanduser() if env else DEFAULT_CONFIG_PATH
+    if env:
+        return Path(env).expanduser()
+
+    local = Path.cwd() / LOCAL_CONFIG_NAME
+    if local.exists():
+        return local
+
+    return GLOBAL_CONFIG_PATH
+
+
+def default_write_path() -> Path:
+    """Path where `locoder setup` writes the config — always the local file."""
+    env = os.environ.get("LOCODER_CONFIG")
+    if env:
+        return Path(env).expanduser()
+    return Path.cwd() / LOCAL_CONFIG_NAME
 
 
 def read_config() -> dict:
     path = config_path()
     if not path.exists():
         raise FileNotFoundError(
-            f"Config not found at {path}. Run `locoder setup` to create it."
+            f"No config found. Run `locoder setup` in your project directory to create "
+            f"{LOCAL_CONFIG_NAME}, or set LOCODER_CONFIG to an explicit path."
         )
     with path.open("rb") as f:
         return tomllib.load(f)
@@ -99,6 +124,6 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
         },
     }
 
-    path = config_path()
+    path = default_write_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(tomli_w.dumps(config).encode())
