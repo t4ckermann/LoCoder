@@ -15,7 +15,7 @@ When the context reaches **80% of `--ctx-size`**, LoCoder triggers a compaction 
 
 This costs one extra inference call per compaction but preserves the gist of earlier work, preventing the agent from repeating steps or contradicting earlier decisions.
 
-**Config** (under `[agent]`):
+**Config** (under `[agent]` in `.locoder.toml`):
 
 ```toml
 [agent]
@@ -73,7 +73,7 @@ Deleted       → remove from ChromaDB
 Agent becomes interactive
 ```
 
-**Config options** (under `[rag]` in `config.toml`):
+**Config options** (under `[rag]` in `.locoder.toml`):
 
 ```toml
 [rag]

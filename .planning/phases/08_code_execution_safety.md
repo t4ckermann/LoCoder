@@ -32,7 +32,7 @@ Code execution is taking longer than expected (60s).
 - Choosing **[a]** sends `SIGTERM` (or `TerminateProcess` on Windows), then `SIGKILL` after 5s if the process hasn't exited
 - After abort, control returns to the `[observe]` node with the result `"Execution aborted by user after Ns"` — the agent reasons about it in the next `[plan]` step and may try a different approach
 
-**Config** (under `[sandbox]` in `config.toml`):
+**Config** (under `[sandbox]` in `.locoder.toml`):
 
 ```toml
 [sandbox]
