@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "locoder"
+version = "0.1.0"
+description = "Local-first coding agent powered by llama.cpp"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12,<1.0",
+  "rich>=13.0,<14.0",
+  "psutil>=6.0,<7.0",
+  "tomli-w>=1.0",
+  "huggingface-hub>=0.23,<1.0",
+  "openai>=1.0,<2.0",
+  "langchain>=0.3,<2.0",
+  "langchain-community>=0.3,<2.0",
+  "langgraph>=1.0,<2.0",
+  "chromadb>=0.5,<1.0",
+  "fastembed>=0.3,<1.0",
+  "pathspec>=0.12,<1.0",
+]
+
+[project.optional-dependencies]
+inprocess = ["llama-cpp-python>=0.3"]
+
+[project.scripts]
+locoder = "locoder.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["locoder*"]
+
+[tool.setuptools.package-data]
+"locoder.data" = ["*.json"]
