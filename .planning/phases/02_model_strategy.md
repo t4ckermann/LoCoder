@@ -44,3 +44,46 @@ Each server instance uses the shared `[inference.server_args]` block by default.
 - **CodeLlama-Instruct** (7B → 34B) — instruction following only; does **not** natively support structured tool calling without a fine-tuned adapter. Only viable when grammar enforcement is used.
 - **Phi-4** (14B) — Microsoft's reasoning-focused model; requires `--jinja` flag for tool calling. Note: Phi-4 is 14B, not 3.8B.
 - **Phi-3.5-mini-Instruct** (3.8B) — small footprint, reasonable code quality; best choice when RAM is the primary constraint.
+- **Gemma 4** (Google, April 2025) — see section below.
+
+---
+
+## Gemma 4 (April 2025)
+
+Gemma 4 is Google's open-weight model family. It substantially outperforms Qwen2.5-Coder on coding benchmarks and ranks #3 overall on the Arena AI leaderboard (31B dense).
+
+### Variants in registry
+
+| Registry name | Architecture | Active params | Context | RAM (Q4_K_M) | Best role |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `gemma4-e4b` | Dense | 4B | 128K | ~4 GB | Executor on low-RAM machines |
+| `gemma4-26b` | MoE (26B total) | 4B active | 256K | ~18 GB | Balanced executor or single-mode |
+| `gemma4-31b` | Dense | 31B | 256K | ~20 GB | Top-quality single or planner |
+
+**`gemma4-26b` is the standout**: MoE routing activates only 4B parameters per token, giving near-31B quality at 4B inference cost. At Q4_K_M it fits in 18 GB — ideal for the planner role in hierarchical mode on machines with 20+ GB.
+
+### Coding benchmark highlights
+
+- **LiveCodeBench v6**: 80.0% (31B) — expert programmer level
+- **Codeforces ELO**: 2150 (31B)
+- Outperforms Qwen2.5-Coder-7B across virtually all coding benchmarks
+
+### Tool calling in llama.cpp — known issues
+
+Gemma 4 has active bugs in llama.cpp (as of build b8902) that affect tool calling:
+
+| Issue | Symptom | Workaround |
+| :--- | :--- | :--- |
+| Streaming drops tool calls | Tool call ends up in reasoning field; client never sees it | Use non-streaming requests |
+| Array param serialization | Array arguments serialized as JSON string instead of array | Avoid array-typed tool params |
+| `<unused25>` token spam | Tokenizer artifacts in output | Build llama.cpp from source with PR #21343 merged |
+
+**LoCoder mitigation**: grammar enforcement (JSON Schema) sidesteps most of these issues because the model output is constrained at the sampling level — the same strategy used for all models (see Phase 3). Non-streaming inference is preferred for tool calls regardless of model.
+
+### Quantization recommendation
+
+`Q4_K_M` is the community consensus for Gemma 4 — 2–5% accuracy loss vs full precision, best size/quality tradeoff. `Q5_K_M` is not widely available for Gemma 4 bartowski builds; stick to Q4_K_M or Q8_0.
+
+### GGUF source
+
+All Gemma 4 GGUF files are from **bartowski** on HuggingFace. Filenames use uppercase quant identifiers (e.g. `Q4_K_M`), handled automatically by the registry `{QUANT}` placeholder.
