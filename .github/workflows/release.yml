@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create tags and releases
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so we can check existing tags
+
+      # ── 1. Read version from pyproject.toml ────────────────────────────────
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      # ── 2. Skip if this version was already released ────────────────────────
+      - name: Check if tag already exists
+        id: check
+        run: |
+          if git tag | grep -q "^${{ steps.version.outputs.tag }}$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag ${{ steps.version.outputs.tag }} already exists — skipping release."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ── 3. Get release notes from the merged PR description ─────────────────
+      #    The PR description is written by the agent (Claude Code) when
+      #    opening the pull request, so it already contains a structured
+      #    summary of what changed. We use it verbatim as the release body.
+      - name: Get PR description
+        id: pr
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Find the PR(s) associated with the merge commit
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+            });
+
+            if (!prs.length) {
+              // Pushed directly to main (no PR) — fall back to commit message
+              const { data: commit } = await github.rest.repos.getCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.sha,
+              });
+              core.setOutput('title', commit.commit.message.split('\n')[0]);
+              core.setOutput('body', commit.commit.message);
+              core.setOutput('source', 'commit');
+              return;
+            }
+
+            const pr = prs[0];
+            core.setOutput('title', pr.title);
+            core.setOutput('body', pr.body || pr.title);
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('source', 'pr');
+
+      # ── 4. Create the GitHub release ────────────────────────────────────────
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TITLE: ${{ steps.pr.outputs.title }}
+          BODY: ${{ steps.pr.outputs.body }}
+          SOURCE: ${{ steps.pr.outputs.source }}
+        run: |
+          echo "Creating release $TAG"
+          echo "Source: $SOURCE"
+
+          gh release create "$TAG" \
+            --title "LoCoder $TAG — $TITLE" \
+            --notes "$BODY"
