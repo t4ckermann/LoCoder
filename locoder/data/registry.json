@@ -20,13 +20,31 @@
   "mistral-nemo": {
     "repo": "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
     "default_quant": "q5_k_m",
-    "filename": "Mistral-Nemo-Instruct-2407-{quant}.gguf",
+    "filename": "Mistral-Nemo-Instruct-2407-{QUANT}.gguf",
     "ram_tier": "12gb"
   },
   "deepseek-coder-v2-lite": {
     "repo": "bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF",
     "default_quant": "q5_k_m",
-    "filename": "DeepSeek-Coder-V2-Lite-Instruct-{quant}.gguf",
+    "filename": "DeepSeek-Coder-V2-Lite-Instruct-{QUANT}.gguf",
     "ram_tier": "8gb"
+  },
+  "gemma4-e4b": {
+    "repo": "bartowski/google_gemma-4-E4B-it-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "google_gemma-4-E4B-it-{QUANT}.gguf",
+    "ram_tier": "4gb"
+  },
+  "gemma4-26b": {
+    "repo": "bartowski/google_gemma-4-26B-A4B-it-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "google_gemma-4-26B-A4B-it-{QUANT}.gguf",
+    "ram_tier": "24gb"
+  },
+  "gemma4-31b": {
+    "repo": "bartowski/google_gemma-4-31B-it-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "google_gemma-4-31B-it-{QUANT}.gguf",
+    "ram_tier": "32gb"
   }
 }

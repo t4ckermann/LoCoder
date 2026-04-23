@@ -37,7 +37,10 @@ def download(name: str, quant: str | None = None) -> Path:
         )
 
     resolved_quant = quant or entry["default_quant"]
-    filename = entry["filename"].format(quant=resolved_quant)
+    # Support {quant} (lowercase, e.g. Qwen) and {QUANT} (uppercase, e.g. bartowski)
+    filename = entry["filename"].format(
+        quant=resolved_quant, QUANT=resolved_quant.upper()
+    )
     repo_id = entry["repo"]
     dest_dir = model_dir(name)
     dest_dir.mkdir(parents=True, exist_ok=True)
