@@ -1,0 +1,32 @@
+{
+  "qwen2.5-coder-7b": {
+    "repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+    "default_quant": "q5_k_m",
+    "filename": "qwen2.5-coder-7b-instruct-{quant}.gguf",
+    "ram_tier": "8gb"
+  },
+  "qwen2.5-coder-1.5b": {
+    "repo": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+    "default_quant": "q5_k_m",
+    "filename": "qwen2.5-coder-1.5b-instruct-{quant}.gguf",
+    "ram_tier": "4gb"
+  },
+  "qwen2.5-coder-14b": {
+    "repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "qwen2.5-coder-14b-instruct-{quant}.gguf",
+    "ram_tier": "16gb"
+  },
+  "mistral-nemo": {
+    "repo": "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
+    "default_quant": "q5_k_m",
+    "filename": "Mistral-Nemo-Instruct-2407-{quant}.gguf",
+    "ram_tier": "12gb"
+  },
+  "deepseek-coder-v2-lite": {
+    "repo": "bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF",
+    "default_quant": "q5_k_m",
+    "filename": "DeepSeek-Coder-V2-Lite-Instruct-{quant}.gguf",
+    "ram_tier": "8gb"
+  }
+}
