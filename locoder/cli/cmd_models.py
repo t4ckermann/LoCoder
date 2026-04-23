@@ -67,8 +67,44 @@ def remove(
         raise typer.Exit(1)
 
 
+def upgrade(
+    old_model: str = typer.Argument(..., help="Model to replace (e.g. qwen2.5-coder-1.5b)"),
+    new_model: str = typer.Argument(..., help="Model to download (e.g. gemma4-26b)"),
+    quant: str | None = typer.Option(None, "--quant", "-q", help="Quantization for the new model"),
+) -> None:
+    """Download a better model, then offer to remove the old one."""
+    from locoder.models.downloader import is_installed
+
+    console.print(f"[bold]Downloading [cyan]{new_model}[/cyan]...[/bold]")
+    try:
+        path = _download(new_model, quant)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Downloaded to {path}[/green]")
+
+    if not is_installed(old_model):
+        console.print(f"[dim]'{old_model}' is not installed — nothing to remove.[/dim]")
+        return
+
+    if typer.confirm(f"\nRemove '{old_model}' to free up disk space?", default=False):
+        try:
+            _remove(old_model)
+            console.print(f"[green]Removed '{old_model}'.[/green]")
+        except FileNotFoundError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+
+    console.print(
+        f"\n[yellow]Remember to update ~/.locoder/config.toml:[/yellow]\n"
+        f"  model = \"{new_model}\""
+    )
+
+
 # Sub-app commands (when accessed via `locoder models ...`)
 app.command("pull")(pull)
 app.command("list")(list_models)
 app.command("ls")(list_models)
 app.command("remove")(remove)
+app.command("upgrade")(upgrade)
