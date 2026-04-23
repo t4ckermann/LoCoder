@@ -1,3 +1,6 @@
+# LoCoder project-local config (contains machine-specific paths and ports)
+.locoder.toml
+
 # Python
 __pycache__/
 *.py[cod]

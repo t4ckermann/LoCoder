@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 from rich.table import Table
 
-from locoder.config.manager import config_path, write_config
+from locoder.config.manager import config_path, default_write_path, write_config
 from locoder.hardware.detect import detect
 from locoder.server.install import download_and_install, find_on_path, installed_bin
 
@@ -104,5 +104,5 @@ def setup() -> None:
     console.print("\n[bold green]Setup complete.[/bold green]")
     console.print(f"  Mode        : {hw.mode}")
     console.print(f"  llama-server: {bin_path}")
-    console.print(f"  Models dir  : ~/.locoder/models/")
-    console.print(f"  Config      : {config_path()}")
+    console.print(f"  Models dir  : ~/.locoder/models/  [dim](global)[/dim]")
+    console.print(f"  Config      : {default_write_path()}  [dim](project-local, gitignored)[/dim]")
