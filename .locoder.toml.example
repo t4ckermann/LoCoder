@@ -1,0 +1,61 @@
+# LoCoder project config — copy to .locoder.toml and run `locoder setup` to populate.
+# .locoder.toml is gitignored (machine-specific paths/ports). This file is committed.
+#
+# Models and the llama-server binary are stored globally in ~/.locoder/ and
+# shared across all projects. Only inference settings and agent behaviour are
+# project-local.
+
+[inference]
+llama_server_bin = "/path/to/llama-server"   # set by `locoder setup`
+host = "127.0.0.1"
+
+# "single"       — one model handles everything (default for < 20 GB RAM)
+# "hierarchical" — separate planner and executor models (> 20 GB RAM)
+mode = "single"
+
+[inference.single]
+model = "qwen2.5-coder-7b"   # run `locoder list` to see installed models
+port = 8080
+
+[inference.hierarchical]
+planner_model  = "mistral-nemo"
+planner_port   = 8081
+executor_model = "qwen2.5-coder-7b"
+executor_port  = 8082
+
+[inference.server_args]
+threads     = 8       # physical CPU cores — set by `locoder setup`
+ctx_size    = 32768
+batch_size  = 512
+ubatch_size = 512
+flash_attn  = "on"
+parallel    = 4
+ngl         = 9999    # GPU layers; 9999 = offload all; 0 = CPU-only
+
+[inference.server_args.planner]
+ctx_size = 16384
+parallel = 2
+
+[inference.server_args.executor]
+ctx_size = 32768
+parallel = 4
+
+[models]
+dir = "~/.locoder/models"   # global model store, shared across projects
+
+[agent]
+clarification_timeout         = 10    # seconds before proceeding with assumptions; 0 = always wait
+context_compaction_threshold  = 0.80  # fraction of ctx_size that triggers summarisation
+
+[sandbox]
+execution_timeout = 60     # seconds before prompting user to wait or abort
+max_extensions    = 10     # max times user can extend timeout (0 = unlimited)
+allow_network     = false  # network access during code execution
+
+[rag]
+embeddings_model  = "nomic-embed-text"
+vector_store_dir  = "~/.locoder/vectorstore"
+exclude           = ["**/.git", "**/node_modules", "**/__pycache__", "**/dist", "**/*.lock"]
+chunk_size        = 512
+chunk_overlap     = 64
+top_k             = 5
