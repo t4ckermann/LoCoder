@@ -38,7 +38,7 @@ unless you reply:
 
 If the user replies before the countdown expires, the agent reads the correction, updates its assumptions, and confirms before proceeding. If no reply comes, it proceeds with the stated assumptions. This keeps simple tasks fast while still giving the user a meaningful checkpoint.
 
-**Countdown duration**: 10 seconds default, configurable in `config.toml` under `[agent] clarification_timeout = 10`. Set to `0` to disable the countdown and always wait for explicit confirmation.
+**Countdown duration**: 10 seconds default, configurable in `.locoder.toml` under `[agent] clarification_timeout = 10`. Set to `0` to disable the countdown and always wait for explicit confirmation.
 
 **Implementation note**: This phase uses the planner model in hierarchical mode. The confirmed assumptions are stored in the conversation context and referenced throughout the execution phase to avoid drift.
 
@@ -107,12 +107,18 @@ tools = [
 ```
 
 **Model compatibility notes:**
-- Reliable native tool calling (chat template): Mistral-Nemo-Instruct, Mistral-7B-Instruct
-- Grammar enforcement required (GBNF/JSON Schema): Qwen2.5-Coder-Instruct, DeepSeek-Coder-V2-Instruct, Phi-4 (also needs `--jinja`)
-- Grammar enforcement required, no native support: CodeLlama-Instruct
-- Base models (non-instruct): **incompatible** — do not use
 
-LoCoder defaults to grammar enforcement (Option A) for all models to guarantee consistency regardless of which model is loaded.
+| Model | Native tool calling | Notes |
+| :--- | :--- | :--- |
+| Mistral-Nemo-Instruct | ✅ Reliable | Best native support in this size range |
+| Gemma 4 (all variants) | ⚠️ Buggy | Streaming drops tool calls; array params serialize incorrectly. Use grammar enforcement + non-streaming. See Phase 2 for details. |
+| Qwen2.5-Coder-Instruct | ❌ Unreliable | Emits tool calls as plain text without `--jinja`; use grammar enforcement |
+| DeepSeek-Coder-V2-Instruct | ❌ Unreliable | Rely on grammar enforcement |
+| Phi-4 | ❌ Needs flag | Requires `--jinja` flag; use grammar enforcement |
+| CodeLlama-Instruct | ❌ None | No native support; grammar enforcement only |
+| Any base model (non-instruct) | ❌ Incompatible | Do not use |
+
+LoCoder defaults to grammar enforcement (Option A) for all models to guarantee consistency regardless of which model is loaded. Non-streaming inference is used for all tool calls.
 
 ---
 
@@ -140,6 +146,40 @@ def search_knowledge_base(query: str) -> list[str]:
 ```
 
 Sandbox behaviour for `run_code` is defined in Phase 8 — soft timeout with user prompt, workspace path validation, no `shell=True`.
+
+---
+
+## Interactive CLI (Terminal UI)
+
+The agent runs as an interactive CLI loop — similar in feel to Claude Code. After `locoder start` brings up the server, the user types requests at a prompt and the agent responds inline in the terminal.
+
+```
+> refactor the auth module to use JWT instead of session cookies
+
+[clarify] I'll proceed with these assumptions in 10s unless you reply:
+  1. Scope: only src/auth/ and its tests
+  2. Keep existing session-based tests as reference, add new JWT tests
+  3. Use PyJWT library (already in requirements.txt)
+
+[plan] reading current auth implementation...
+[act]  read_file("src/auth/session.py")
+[act]  write_file("src/auth/jwt.py", ...)
+[verify] ruff check — no errors
+        mypy — no errors
+
+Done. 3 files changed. Run `pytest tests/auth/` to verify.
+>
+```
+
+**Slash commands** available in the interactive loop (Phase 5):
+
+| Command | Effect |
+| :--- | :--- |
+| `/clear` | Reset conversation context |
+| `/status` | Show model, mode, context usage % |
+| `/help` | List available commands |
+
+The interactive loop is implemented in Phase 3 as part of the agent loop. The `locoder start` command currently stubs this with a placeholder.
 
 ---
 

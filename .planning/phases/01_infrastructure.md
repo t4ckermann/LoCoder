@@ -1,61 +1,88 @@
-# Phase 1: Infrastructure Setup
+# Phase 1: Infrastructure Setup ✅
 
-## Step 1: Build / Install llama.cpp
-
-Clone and build `llama.cpp` with the appropriate backend for the target machine:
-
-```bash
-# GPU (CUDA)
-cmake -B build -DGGML_CUDA=ON && cmake --build build -j$(nproc)
-
-# Apple Silicon (Metal)
-cmake -B build -DGGML_METAL=ON && cmake --build build -j$(nproc)
-
-# CPU-only (universal fallback)
-cmake -B build && cmake --build build -j$(nproc)
-```
-
-Key binaries produced:
-- `llama-server` — the HTTP inference server (primary dependency)
-- `llama-quantize` — for re-quantizing GGUF models locally
-- `llama-bench` — to benchmark a model/hardware combination
-
-LoCoder stores the path to the `llama-server` binary in its config (see Step 3). Users do not invoke it directly.
+> **Status: complete** — all steps below are implemented and working as of v0.2.0.
 
 ---
 
-## Step 2: Model Management (`locoder pull`)
+## Step 1: Install llama.cpp (`locoder setup`)
+
+`locoder setup` downloads a pre-built `llama-server` binary automatically — no cmake, no compiler required.
+
+**Auto-install flow:**
+1. Check for a managed binary at `~/.locoder/bin/llama-server` → use it
+2. Check `PATH` for `llama-server` → use it
+3. Fetch the latest release from the [llama.cpp GitHub releases API](https://api.github.com/repos/ggerganov/llama.cpp/releases/latest)
+4. Pick the correct asset for the current platform/arch (skips CUDA/ROCm/Vulkan variants by default so the binary runs on any machine without GPU drivers)
+5. Extract the full archive to `~/.locoder/bin/` (binary + shared libraries)
+6. Create `.dylib` compatibility symlinks on macOS (the binary's RPATH uses short names like `libllama.0.dylib`; the archive ships `libllama.0.0.8902.dylib`)
+7. Validate with `llama-server --version`
+
+**Platform → asset mapping:**
+
+| Platform | Asset keyword |
+| :--- | :--- |
+| macOS ARM64 (Apple Silicon) | `macos-arm64` |
+| macOS x86_64 | `macos-x86_64` |
+| Linux x86_64 | `ubuntu-x64` |
+| Linux ARM64 | `ubuntu-arm64` |
+| Windows x64 | `win-cpu-x64` |
+
+The binary and all shared libraries land in `~/.locoder/bin/` — shared across all projects. `DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH` is set automatically when launching the server so the shared libs are found at runtime.
+
+**Advanced / manual build** (only needed for custom backends like CUDA or ROCm):
+
+```bash
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+
+# GPU (CUDA)
+cmake -B build -DGGML_CUDA=ON && cmake --build build -j$(nproc)
+
+# Apple Silicon (Metal) — pre-built binary already uses Metal
+cmake -B build -DGGML_METAL=ON && cmake --build build -j$(nproc)
+
+# CPU-only
+cmake -B build && cmake --build build -j$(nproc)
+```
+
+Then point `llama_server_bin` in `.locoder.toml` at your custom binary.
+
+---
+
+## Step 2: Model Management
 
 LoCoder manages model downloads automatically. Users never need to find or download GGUF files manually.
 
 ### Storage location
 
-All models are stored in `~/.locoder/models/<model-id>/`. Example:
+Models are stored globally in `~/.locoder/models/<model-id>/` — shared across all projects on the machine:
 
 ```
 ~/.locoder/
+├── bin/
+│   ├── llama-server
+│   └── lib*.dylib          ← shared libraries (macOS)
 └── models/
-    ├── qwen2.5-coder-7b-instruct/
+    ├── qwen2.5-coder-7b/
     │   └── qwen2.5-coder-7b-instruct-q5_k_m.gguf
-    └── qwen2.5-coder-1.5b-instruct/
-        └── qwen2.5-coder-1.5b-instruct-q5_k_m.gguf
+    └── gemma4-26b/
+        └── google_gemma-4-26B-A4B-it-Q4_K_M.gguf
 ```
 
 ### CLI commands
 
 ```bash
-# First-run hardware detection — writes ~/.locoder/config.toml
+# First-run setup — detects hardware, installs llama-server, writes .locoder.toml
 locoder setup
 
-# Start the agent in the current directory
-# If configured models are not installed, downloads them automatically before starting
+# Start the agent (downloads missing models automatically, with confirm prompt)
 locoder start
 
-# List locally installed models (both aliases work)
+# List locally installed models
 locoder list
 locoder ls
 
-# Download a model manually (fetches recommended GGUF quantization by default)
+# Download a model (fetches default quantization from registry)
 locoder pull qwen2.5-coder-7b
 
 # Download a specific quantization
@@ -64,28 +91,30 @@ locoder pull qwen2.5-coder-7b --quant q4_k_m
 # Remove a locally installed model
 locoder remove qwen2.5-coder-7b
 
-# Upgrade: download a better model, then prompt to remove the old one
+# Upgrade: download better model, prompt to remove old one on success
 locoder upgrade qwen2.5-coder-1.5b qwen2.5-coder-7b
 
-# Update the built-in model registry from the LoCoder GitHub repo
+# Fetch latest model registry from GitHub
 locoder registry update
 ```
 
-> **Model selection is always done via `config.toml`** — edit `[inference.single] model` or `[inference.hierarchical] planner_model` / `executor_model` directly. There is no `locoder use` command.
+> **Model selection is via `.locoder.toml`** — edit `[inference.single] model` or `[inference.hierarchical] planner_model` / `executor_model`. There is no `locoder use` command.
 
 ### `locoder upgrade <old-model> <new-model>`
 
-Workflow:
 1. Download `<new-model>` (same as `locoder pull`)
 2. On success, prompt: `"Remove '<old-model>' to free up disk space? [y/N]"`
-3. If confirmed, `locoder remove <old-model>`
-4. Print a reminder to update `config.toml` to point at the new model
+3. If confirmed, remove the old model directory
+4. Print a reminder to update `.locoder.toml`
 
-The remove step only runs after a fully successful download — a failed or interrupted download leaves the old model untouched. The config is never modified automatically; the user always edits it directly.
+The remove step only runs after a fully successful download. The config is never modified automatically.
 
 ### Model registry
 
-LoCoder ships with a built-in registry file (`registry.json`) that maps short model names to their HuggingFace repo, recommended GGUF filename, and quantization per RAM tier. Example entry:
+LoCoder ships a bundled `registry.json` (`locoder/data/registry.json`) mapping short names to HuggingFace repos, filenames, and RAM tiers. Filename templates support two placeholders:
+
+- `{quant}` — lowercase (used by Qwen official repos, e.g. `q5_k_m`)
+- `{QUANT}` — uppercase (used by bartowski repos, e.g. `Q5_K_M`)
 
 ```json
 {
@@ -94,160 +123,153 @@ LoCoder ships with a built-in registry file (`registry.json`) that maps short mo
     "default_quant": "q5_k_m",
     "filename": "qwen2.5-coder-7b-instruct-{quant}.gguf",
     "ram_tier": "8gb"
+  },
+  "gemma4-26b": {
+    "repo": "bartowski/google_gemma-4-26B-A4B-it-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "google_gemma-4-26B-A4B-it-{QUANT}.gguf",
+    "ram_tier": "24gb"
   }
 }
 ```
 
-Downloads are fetched from HuggingFace Hub using the `huggingface-hub` Python library. Progress is shown with a progress bar. The registry can be updated with `locoder registry update` (fetches latest from the LoCoder GitHub repo).
+A user override at `~/.locoder/registry.json` takes precedence over the bundled file. `locoder registry update` fetches the latest from GitHub and writes the override.
 
 ---
 
 ## Step 3: Configuration
 
-LoCoder reads a config file at `~/.locoder/config.toml`:
+Config is **project-local** — `.locoder.toml` in the working directory. It is gitignored so machine-specific paths and ports don't end up in version control. A committed `.locoder.toml.example` serves as the template.
+
+**Resolution order:**
+1. `LOCODER_CONFIG` env var (explicit override)
+2. `.locoder.toml` in the current directory ← written by `locoder setup`
+3. `~/.locoder/config.toml` (global fallback)
+
+```
+your-project/
+├── .locoder.toml          ← gitignored, machine-specific
+├── .locoder.toml.example  ← committed, template for teammates
+```
+
+**Full config structure** (generated by `locoder setup`):
 
 ```toml
 [inference]
-llama_server_bin = "/path/to/llama-server"   # Set automatically during setup
+llama_server_bin = "~/.locoder/bin/llama-server"
 host = "127.0.0.1"
-
-# Model mode: "single" or "hierarchical"
-# "single"       — one model handles everything (planning, clarification, code generation)
-# "hierarchical" — separate planner and executor models (requires more RAM)
-# locoder setup detects available RAM/VRAM and writes a sensible default here.
-mode = "single"
+mode = "single"   # "single" or "hierarchical"
 
 [inference.single]
-model = "qwen2.5-coder-7b"                   # Active model for single mode
-port = 8080                                  # llama-server port — change if 8080 is already in use
+model = "qwen2.5-coder-7b"
+port = 8080
 
 [inference.hierarchical]
-planner_model = "mistral-nemo"               # Larger model: clarification, planning, debugging
-planner_port = 8081                          # llama-server port for the planner model
-executor_model = "qwen2.5-coder-7b"          # Coding model: code generation, file writes
-executor_port = 8082                         # llama-server port for the executor model
+planner_model  = "mistral-nemo"
+planner_port   = 8081
+executor_model = "qwen2.5-coder-7b"
+executor_port  = 8082
 
-# Shared server args — apply to all llama-server instances unless overridden below
 [inference.server_args]
-threads = 8          # Physical core count — set automatically via CPU detection
-ctx_size = 32768
-batch_size = 512
+threads     = 8       # physical cores — set by locoder setup
+ctx_size    = 32768
+batch_size  = 512
 ubatch_size = 512
-flash_attn = "on"
-parallel = 4
-ngl = 9999           # Set automatically based on detected GPU VRAM; reduce if OOM
+flash_attn  = "on"    # accepts "on", "off", or "auto"
+parallel    = 4
+ngl         = 9999    # 9999 = offload all layers; 0 = CPU-only
 
-# Per-model overrides for hierarchical mode (optional — omit keys to inherit from shared above)
-# Useful when planner and executor have different context or memory requirements.
 [inference.server_args.planner]
-ctx_size = 16384     # Planner typically needs less context than the executor
+ctx_size = 16384
 parallel = 2
 
 [inference.server_args.executor]
-ctx_size = 32768     # Executor handles large file reads and code generation
+ctx_size = 32768
 parallel = 4
 
 [models]
 dir = "~/.locoder/models"
 
 [agent]
-clarification_timeout = 10             # Seconds before proceeding with stated assumptions (0 = always wait)
-context_compaction_threshold = 0.80    # Fraction of ctx_size that triggers summarization
+clarification_timeout        = 10
+context_compaction_threshold = 0.80
 
 [sandbox]
-execution_timeout = 60    # Seconds before prompting the user to wait or abort
-max_extensions = 10       # Max times the user can extend (0 = unlimited)
-allow_network = false     # Network access during code execution — off by default
+execution_timeout = 60
+max_extensions    = 10
+allow_network     = false
 
 [rag]
 embeddings_model = "nomic-embed-text"
 vector_store_dir = "~/.locoder/vectorstore"
-exclude = ["**/.git", "**/node_modules", "**/__pycache__", "**/dist", "**/*.lock"]
-chunk_size = 512      # Tokens per chunk
-chunk_overlap = 64    # Overlap between consecutive chunks
-top_k = 5             # Chunks retrieved per search_knowledge_base call
+exclude          = ["**/.git", "**/node_modules", "**/__pycache__", "**/dist", "**/*.lock"]
+chunk_size       = 512
+chunk_overlap    = 64
+top_k            = 5
 ```
 
-On first run, `locoder setup` detects hardware and writes sensible defaults into `config.toml`. Detection is intentionally lightweight — no heavy dependencies:
+**Hardware detection** (runs during `locoder setup`):
 
-- **CPU cores**: `psutil.cpu_count(logical=False)` → sets `threads`
-- **RAM**: `psutil.virtual_memory().total` → informs model mode default
-- **NVIDIA VRAM**: one `nvidia-smi --query-gpu=memory.total --format=csv,noheader` subprocess call → sets `ngl` and informs model mode
-- **Apple Silicon**: checks `sysctl hw.memsize` → treats unified memory as VRAM
-- **Port availability**: attempts `socket.bind` on each default port (8080, 8081, 8082); if already in use, increments by 1 until a free port is found and writes the result to config. Warns the user which ports were reassigned.
+- **CPU cores**: `psutil.cpu_count(logical=False)` → `threads`
+- **RAM**: `psutil.virtual_memory().total`
+- **NVIDIA VRAM**: `nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits`
+- **Apple Silicon**: `sysctl -n hw.memsize` → unified memory treated as VRAM
+- **Ports**: `socket.bind` attempted on 8080/8081/8082; increments until free
 
-**Auto mode selection thresholds** (written to `mode` in config, always overridable):
+**Auto mode selection thresholds:**
 
-| Available RAM / VRAM | Default mode | Reasoning |
+| Effective RAM/VRAM | Mode | Model hint |
 | :--- | :--- | :--- |
-| < 10 GB | `single` (small model) | Not enough headroom for two models |
-| 10–20 GB | `single` (mid model) | One good model fits; two would be too slow |
-| > 20 GB | `hierarchical` (suggested) | Enough headroom to run planner + executor |
+| < 10 GB | `single` | `small` (qwen2.5-coder-1.5b) |
+| 10–20 GB | `single` | `mid` (qwen2.5-coder-7b) |
+| > 20 GB | `hierarchical` | `large` (qwen2.5-coder-14b) |
 
-The user can always override `mode` in `config.toml` regardless of what setup detected.
+The user can always override `mode` in `.locoder.toml`.
 
 ---
 
 ## Step 4: Start the Inference Server
 
-LoCoder starts and stops `llama-server` automatically when the agent starts/exits. The server is managed as a subprocess — users never need to run it manually.
-
-### Auto-install on startup
-
-When `locoder start` is run, LoCoder checks whether the model(s) defined in `config.toml` are present in `~/.locoder/models/`. If any are missing, it downloads them automatically before launching the server:
+`locoder start` manages the full startup sequence:
 
 ```
 locoder start
     ↓
-Read config — determine mode (single / hierarchical)
+Read .locoder.toml — determine mode (single / hierarchical)
     ↓
 For each configured model:
-    Present in ~/.locoder/models/? → continue
-    Missing → look up in registry.json → download from HuggingFace Hub
-    Not in registry? → exit with error: "Unknown model '<name>'. Run `locoder registry update` or add it to registry.json."
+    Installed in ~/.locoder/models/? → continue
+    Missing → confirm with user → download from HuggingFace
+    Not in registry? → exit with error
     ↓
-All models ready → start llama-server instance(s) → agent becomes interactive
+Start llama-server subprocess(es)
+    ↓
+Poll /health every 0.5s — timeout 60s
+    ↓
+"Server ready at http://127.0.0.1:<port>"
+    ↓
+# TODO: agent loop (Phase 3)
 ```
 
-The download uses the same `huggingface-hub` flow as `locoder pull`, with a progress bar. If the download fails (no internet, rate limit, etc.) LoCoder exits with a clear error rather than starting with a broken state.
-
-For debugging or advanced use, the server can be started manually. Use the port from your config (`[inference.single] port`, default 8080; or `planner_port` / `executor_port` for hierarchical):
-
-```bash
-# Single mode
-./llama-server \
-  --model ~/.locoder/models/qwen2.5-coder-7b-instruct/qwen2.5-coder-7b-instruct-q5_k_m.gguf \
-  -ngl 9999 \
-  --threads 8 \
-  --ctx-size 32768 \
-  --batch-size 512 \
-  --ubatch-size 512 \
-  --flash-attn on \
-  --parallel 4 \
-  --port 8080   # match [inference.single] port in config
-
-# Hierarchical mode — run once per model on its own port
-./llama-server --model ~/.locoder/models/mistral-nemo-instruct/... --port 8081 ...
-./llama-server --model ~/.locoder/models/qwen2.5-coder-7b-instruct/... --port 8082 ...
-```
+`DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH` is set to `~/.locoder/bin/` before spawning so managed binaries find their shared libraries without system-level install.
 
 **Critical tuning notes:**
-- `--threads` must equal the **physical** core count (not logical/hyperthreaded). This is the single biggest cause of slow inference.
-- `-ngl` (alias `--n-gpu-layers`) takes a **number only**. Use `9999` to offload everything; llama.cpp clamps it to the model's actual layer count. Reduce if you hit OOM.
-- `--flash-attn` accepts `on`, `off`, or `auto` (default). `on` is explicit and safe.
-- `--ctx-size` scales KV cache linearly — only set as large as your tasks require.
+- `--threads` = physical core count (not hyperthreaded). Biggest single factor for CPU speed.
+- `-ngl 9999` offloads all layers; llama.cpp clamps to model's actual count. Reduce if OOM.
+- `--flash-attn on/off/auto` — always pass a value; it is not a boolean flag.
+- `--ctx-size` scales KV cache linearly — set conservatively.
 
 **Optional: Speculative decoding** (1.6–2.5× throughput gain)
 
-Run a small draft model alongside the main model. Both must share the same tokenizer:
+Both models must share the same tokenizer:
 
 ```bash
-./llama-server \
-  --model ~/.locoder/models/qwen2.5-coder-7b-instruct/qwen2.5-coder-7b-instruct-q5_k_m.gguf \
-  --model-draft ~/.locoder/models/qwen2.5-coder-1.5b-instruct/qwen2.5-coder-1.5b-instruct-q5_k_m.gguf \
+~/.locoder/bin/llama-server \
+  --model ~/.locoder/models/qwen2.5-coder-7b/qwen2.5-coder-7b-instruct-q5_k_m.gguf \
+  --model-draft ~/.locoder/models/qwen2.5-coder-1.5b/qwen2.5-coder-1.5b-instruct-q5_k_m.gguf \
   --draft-max 8 \
   -ngl 9999 \
-  --threads 8
+  --threads 10
 ```
 
 ---
@@ -255,7 +277,10 @@ Run a small draft model alongside the main model. Both must share the same token
 ## Step 5: Verify the Server
 
 ```bash
-# Replace 8080 with whatever port is in [inference.single] port in your config
+# Health check
+curl http://localhost:8080/health
+
+# Chat completion
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "local", "messages": [{"role": "user", "content": "print hello world in Python"}]}'
