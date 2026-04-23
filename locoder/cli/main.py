@@ -34,10 +34,11 @@ app.command()(start)
 app.add_typer(models_app, name="models")
 app.add_typer(registry_app, name="registry")
 
-# Convenience aliases at top level: pull, list, ls, remove
-from locoder.cli.cmd_models import pull, list_models, remove  # noqa: E402
+# Convenience aliases at top level: pull, list, ls, remove, upgrade
+from locoder.cli.cmd_models import pull, list_models, remove, upgrade  # noqa: E402
 
 app.command("pull")(pull)
 app.command("list")(list_models)
 app.command("ls")(list_models)
 app.command("remove")(remove)
+app.command("upgrade")(upgrade)
