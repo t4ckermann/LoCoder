@@ -11,7 +11,7 @@ For coding tasks, quality degrades more noticeably under aggressive quantization
 | Q2_K | Poor for code | Emergency / extremely low RAM |
 | Q3_K_M | Acceptable | Sub-4 GB devices, small models only |
 | Q4_K_M | Good | Default for CPU-only inference |
-| **Q5_K_M** | **Excellent** | **Recommended default for coding** |
+| **Q5_K_M** | **Excellent** | **Recommended default for coding** (Note: Not widely available for all builds)
 | Q6_K | Near-lossless | When VRAM headroom exists |
 | Q8_0 | Near-lossless | Highest quality, near full precision |
 
@@ -48,7 +48,7 @@ Each server instance uses the shared `[inference.server_args]` block by default.
 
 ---
 
-## Gemma 4 (April 2025)
+**Gemma 4 (April 2026)**
 
 Gemma 4 is Google's open-weight model family. It substantially outperforms Qwen2.5-Coder on coding benchmarks and ranks #3 overall on the Arena AI leaderboard (31B dense).
 
@@ -79,6 +79,9 @@ Gemma 4 has active bugs in llama.cpp (as of build b8902) that affect tool callin
 | `<unused25>` token spam | Tokenizer artifacts in output | Build llama.cpp from source with PR #21343 merged |
 
 **LoCoder mitigation**: grammar enforcement (JSON Schema) sidesteps most of these issues because the model output is constrained at the sampling level — the same strategy used for all models (see Phase 3). Non-streaming inference is preferred for tool calls regardless of model.
+
+**Build Note**: Be aware that Gemma 4 build b8902 might have specific issues with tool calling. Verify compatibility and apply any necessary workarounds.
+
 
 ### Quantization recommendation
 
