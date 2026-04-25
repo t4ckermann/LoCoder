@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import tomli_w
 
@@ -48,7 +49,7 @@ def default_write_path() -> Path:
     return Path.cwd() / LOCAL_CONFIG_NAME
 
 
-def read_config() -> dict:
+def read_config() -> dict[str, Any]:
     path = config_path()
     if not path.exists():
         raise FileNotFoundError(
@@ -63,7 +64,7 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
     executor_model = _HINT_TO_MODEL.get(hw.model_hint, "qwen2.5-coder-7b")
     ngl = 9999 if hw.vram_gb is not None else 0
 
-    config: dict = {
+    config: dict[str, Any] = {
         "inference": {
             "llama_server_bin": llama_server_bin,
             "host": "127.0.0.1",

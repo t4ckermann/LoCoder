@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import shutil
 import urllib.request
 from pathlib import Path
@@ -17,11 +16,11 @@ from rich.progress import (
 
 from locoder.models.registry import lookup
 
-_MODELS_DIR = Path("~/.locoder/models").expanduser()
+MODELS_DIR = Path("~/.locoder/models").expanduser()
 
 
 def model_dir(model_id: str) -> Path:
-    return _MODELS_DIR / model_id
+    return MODELS_DIR / model_id
 
 
 def is_installed(model_id: str) -> bool:

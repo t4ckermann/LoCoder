@@ -1,23 +1,21 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from locoder.models.downloader import MODELS_DIR as _MODELS_DIR
 from locoder.models.downloader import download as _download
-from locoder.models.downloader import model_dir, remove as _remove
+from locoder.models.downloader import is_installed
+from locoder.models.downloader import remove as _remove
 
 app = typer.Typer(help="Manage local models.")
 console = Console()
 
-_MODELS_DIR = Path("~/.locoder/models").expanduser()
-
 
 def pull(
     model: str = typer.Argument(..., help="Model name from registry (e.g. qwen2.5-coder-7b)"),
-    quant: str | None = typer.Option(None, "--quant", "-q", help="Quantization level (e.g. q4_k_m)"),
+    quant: str | None = typer.Option(None, "--quant", "-q", help="Quantization (e.g. q4_k_m)"),
 ) -> None:
     """Download a model from HuggingFace."""
     try:
@@ -25,7 +23,7 @@ def pull(
         console.print(f"[green]Downloaded to {path}[/green]")
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def list_models() -> None:
@@ -64,7 +62,7 @@ def remove(
         console.print(f"[green]Removed '{model}'.[/green]")
     except FileNotFoundError as exc:
         console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def upgrade(
@@ -73,14 +71,12 @@ def upgrade(
     quant: str | None = typer.Option(None, "--quant", "-q", help="Quantization for the new model"),
 ) -> None:
     """Download a better model, then offer to remove the old one."""
-    from locoder.models.downloader import is_installed
-
     console.print(f"[bold]Downloading [cyan]{new_model}[/cyan]...[/bold]")
     try:
         path = _download(new_model, quant)
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     console.print(f"[green]Downloaded to {path}[/green]")
 
@@ -94,7 +90,7 @@ def upgrade(
             console.print(f"[green]Removed '{old_model}'.[/green]")
         except FileNotFoundError as exc:
             console.print(f"[red]{exc}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     console.print(
         f"\n[yellow]Remember to update ~/.locoder/config.toml:[/yellow]\n"

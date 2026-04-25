@@ -9,6 +9,8 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from locoder.models.downloader import model_dir
+
 
 @dataclass
 class ServerHandle:
@@ -22,7 +24,7 @@ def build_argv(
     llama_server_bin: str,
     model_path: Path,
     port: int,
-    args: dict,
+    args: dict[str, object],
 ) -> list[str]:
     argv = [
         llama_server_bin,
@@ -69,7 +71,7 @@ def _launch_one(
     bin_path: str,
     model_path: Path,
     port: int,
-    server_args: dict,
+    server_args: dict[str, object],
     role: str,
 ) -> ServerHandle:
     argv = build_argv(bin_path, model_path, port, server_args)
@@ -101,9 +103,7 @@ def _launch_one(
     return ServerHandle(proc=proc, port=port, model_path=model_path, role=role)
 
 
-def start_server(mode: str, config: dict) -> list[ServerHandle]:
-    from locoder.models.downloader import model_dir
-
+def start_server(mode: str, config: dict) -> list[ServerHandle]:  # type: ignore[type-arg]
     inf = config["inference"]
     bin_path: str = inf["llama_server_bin"]
     shared_args: dict = dict(inf.get("server_args", {}))
@@ -132,7 +132,9 @@ def start_server(mode: str, config: dict) -> list[ServerHandle]:
         executor_gguf = _resolve_gguf(executor_name)
 
         handles.append(_launch_one(bin_path, planner_gguf, planner_port, planner_args, "planner"))
-        handles.append(_launch_one(bin_path, executor_gguf, executor_port, executor_args, "executor"))
+        handles.append(
+            _launch_one(bin_path, executor_gguf, executor_port, executor_args, "executor")
+        )
 
     else:
         raise ValueError(f"Unknown inference mode: {mode!r}")
@@ -142,8 +144,6 @@ def start_server(mode: str, config: dict) -> list[ServerHandle]:
 
 
 def _resolve_gguf(model_name: str) -> Path:
-    from locoder.models.downloader import model_dir
-
     d = model_dir(model_name)
     ggufs = list(d.glob("*.gguf"))
     if not ggufs:

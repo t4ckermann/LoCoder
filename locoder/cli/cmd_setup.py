@@ -4,10 +4,17 @@ import subprocess
 
 import typer
 from rich.console import Console
-from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TimeRemainingColumn, TransferSpeedColumn
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 from rich.table import Table
 
-from locoder.config.manager import config_path, default_write_path, write_config
+from locoder.config.manager import default_write_path, write_config
 from locoder.hardware.detect import detect
 from locoder.server.install import download_and_install, find_on_path, installed_bin
 
@@ -53,7 +60,7 @@ def _resolve_llama_server() -> str:
             bin_path = download_and_install(progress_callback=_cb)
         except Exception as exc:
             console.print(f"[red]Download failed: {exc}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     console.print(f"[green]Installed llama-server to {bin_path}[/green]")
     return str(bin_path)
@@ -69,10 +76,10 @@ def _verify_binary(bin_path: str) -> None:
         )
         if result.returncode != 0:
             console.print(f"[red]Binary check failed: {result.stderr.strip()}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         console.print(f"[red]Failed to run binary: {exc}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def setup() -> None:
@@ -104,5 +111,5 @@ def setup() -> None:
     console.print("\n[bold green]Setup complete.[/bold green]")
     console.print(f"  Mode        : {hw.mode}")
     console.print(f"  llama-server: {bin_path}")
-    console.print(f"  Models dir  : ~/.locoder/models/  [dim](global)[/dim]")
+    console.print("  Models dir  : ~/.locoder/models/  [dim](global)[/dim]")
     console.print(f"  Config      : {default_write_path()}  [dim](project-local, gitignored)[/dim]")

@@ -8,7 +8,7 @@ from typing import Literal
 import psutil
 
 
-@dataclass
+@dataclass(frozen=True)
 class HardwareInfo:
     cpu_cores: int
     ram_gb: float
