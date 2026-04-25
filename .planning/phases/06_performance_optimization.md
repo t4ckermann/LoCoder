@@ -14,8 +14,12 @@
 
 | Hardware | Estimated tok/sec | Practical model |
 | :--- | :---: | :--- |
-| CPU only (8-core) | 5–20 | Qwen2.5-Coder-1.5B Q4_K_M |
+| CPU only (8-core) | 5–20 | Qwen2.5-Coder-1.5B Q4_K_M or Gemma4-E4B Q4_K_M |
+| Apple Silicon 16 GB (unified) | 40–70 | Qwen2.5-Coder-7B Q5_K_M or Gemma4-26B Q4_K_M |
+| Apple Silicon 32 GB (unified) | 60–100 | Gemma4-26B Q4_K_M or Gemma4-31B Q4_K_M |
 | 8 GB VRAM (e.g. RTX 3060) | 30–50 | Qwen2.5-Coder-7B Q5_K_M |
-| 16 GB VRAM (e.g. RTX 4060 Ti) | 60–100 | Qwen2.5-Coder-14B Q5_K_M |
-| 24 GB VRAM (e.g. RTX 4090) | 120–150 | Qwen2.5-Coder-32B Q4_K_M |
+| 16 GB VRAM (e.g. RTX 4060 Ti) | 60–100 | Qwen2.5-Coder-14B Q5_K_M or Gemma4-26B Q4_K_M |
+| 24 GB VRAM (e.g. RTX 4090) | 120–150 | Gemma4-31B Q4_K_M |
 | 48 GB+ (e.g. dual 24 GB) | 200+ | DeepSeek-Coder-V2 Q5_K_M |
+
+> Apple Silicon throughput benefits from Metal GPU offload (`ngl = 9999`) and unified memory — the full model fits in GPU-accessible RAM without VRAM limits. Gemma4-26B is particularly well-suited: MoE with only 4B active params means fast token generation despite a large parameter count.
