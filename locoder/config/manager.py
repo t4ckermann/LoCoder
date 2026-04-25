@@ -14,13 +14,18 @@ LOCAL_CONFIG_NAME = ".locoder.toml"
 # Global fallback — used when no local config exists
 GLOBAL_CONFIG_PATH = Path("~/.locoder/config.toml").expanduser()
 
-# Maps model_hint → registry short name
+# Maps model_hint → executor registry short name
+# "large" now defaults to gemma4-e4b: faster than gemma4-26b at a fraction of the RAM.
+# For high-VRAM systems (>20 GB) that want maximum quality, swap to gemma4-26b manually.
 _HINT_TO_MODEL: dict[str, str] = {
     "small": "qwen2.5-coder-1.5b",
     "mid": "qwen2.5-coder-7b",
-    "large": "qwen2.5-coder-14b",
+    "large": "gemma4-e4b",
 }
-_PLANNER_MODEL = "mistral-nemo"
+# Planner model — used only in hierarchical mode.
+# Gemma 4 models support thinking mode: set agent.thinking_mode = true in config
+# and Phase 3's agent loop will prepend <|think|> to the planner's system message.
+_PLANNER_MODEL = "gemma4-e4b"
 
 
 def config_path() -> Path:
@@ -103,6 +108,7 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
         "agent": {
             "clarification_timeout": 10,
             "context_compaction_threshold": 0.80,
+            "thinking_mode": True,
         },
         "sandbox": {
             "execution_timeout": 60,

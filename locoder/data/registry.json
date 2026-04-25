@@ -29,22 +29,32 @@
     "filename": "DeepSeek-Coder-V2-Lite-Instruct-{QUANT}.gguf",
     "ram_tier": "8gb"
   },
+  "gemma4-e2b": {
+    "repo": "unsloth/gemma-4-E2B-it-GGUF",
+    "default_quant": "Q4_K_M",
+    "filename": "gemma-4-E2B-it-{QUANT}.gguf",
+    "ram_tier": "4gb",
+    "notes": "2.3B active params (5.1B with embeddings). Text + image + audio. 128K ctx. Thinking mode: prepend <|think|> to system message."
+  },
   "gemma4-e4b": {
-    "repo": "bartowski/google_gemma-4-E4B-it-GGUF",
-    "default_quant": "q4_k_m",
-    "filename": "google_gemma-4-E4B-it-{QUANT}.gguf",
-    "ram_tier": "4gb"
+    "repo": "unsloth/gemma-4-E4B-it-GGUF",
+    "default_quant": "Q4_K_M",
+    "filename": "gemma-4-E4B-it-{QUANT}.gguf",
+    "ram_tier": "8gb",
+    "notes": "4.5B active params (8B with embeddings). Text + image + audio. 128K ctx. Recommended replacement for gemma4-26b on memory-constrained systems. Thinking mode: prepend <|think|> to system message."
   },
   "gemma4-26b": {
-    "repo": "bartowski/google_gemma-4-26B-A4B-it-GGUF",
-    "default_quant": "q4_k_m",
-    "filename": "google_gemma-4-26B-A4B-it-{QUANT}.gguf",
-    "ram_tier": "24gb"
+    "repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+    "default_quant": "UD-Q4_K_XL",
+    "filename": "gemma-4-26B-A4B-it-{QUANT}.gguf",
+    "ram_tier": "24gb",
+    "notes": "MoE: 3.8B active / 25.2B total. Text + image. 256K ctx. Thinking mode: prepend <|think|> to system message."
   },
   "gemma4-31b": {
-    "repo": "bartowski/google_gemma-4-31B-it-GGUF",
-    "default_quant": "q4_k_m",
-    "filename": "google_gemma-4-31B-it-{QUANT}.gguf",
-    "ram_tier": "32gb"
+    "repo": "unsloth/gemma-4-31B-it-GGUF",
+    "default_quant": "Q4_K_M",
+    "filename": "gemma-4-31B-it-{QUANT}.gguf",
+    "ram_tier": "32gb",
+    "notes": "31B dense. Text + image. 256K ctx. Best overall quality. Thinking mode: prepend <|think|> to system message."
   }
 }
