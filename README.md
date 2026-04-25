@@ -58,9 +58,16 @@ Models and the `llama-server` binary are always stored globally in `~/.locoder/`
 | `qwen2.5-coder-14b` | 14B | ~9 GB | Higher quality coding |
 | `mistral-nemo` | 12B | ~7 GB | Planning / reasoning |
 | `deepseek-coder-v2-lite` | 16B active | ~10 GB | Code-focused MoE |
-| `gemma4-e4b` | 4B | ~3 GB | Low-RAM, strong quality |
-| `gemma4-26b` | 26B (4B active) | ~18 GB | Best balance — MoE |
-| `gemma4-31b` | 31B | ~20 GB | Top-tier, workstation |
+| `gemma4-e2b` | 2.3B active (5.1B total) | ~3 GB | Fastest; constrained systems |
+| `gemma4-e4b` | 4.5B active (8B total) | ~5 GB | **Recommended default** — text, image, audio |
+| `gemma4-26b` | 3.8B active (25.2B total, MoE) | ~17 GB | High-VRAM; 256K context |
+| `gemma4-31b` | 30.7B | ~18 GB | Best quality; high-VRAM only |
+
+### Gemma 4 notes
+
+**Why `gemma4-e4b` over `gemma4-26b`**: the 26B is MoE — it loads 25 GB of weights even though only 3.8B are active per token, causing slow memory bandwidth. The E4B loads only 8 GB total, responds significantly faster, and also supports audio. Use 26B/31B only when quality clearly outweighs latency.
+
+**Thinking mode**: Gemma 4 supports chain-of-thought reasoning via the `<|think|>` token, injected per-request in the chat API. This is a Phase 3 feature — not yet available in the app.
 
 ```bash
 locoder pull qwen2.5-coder-7b          # download

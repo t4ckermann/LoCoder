@@ -14,13 +14,22 @@ host = "127.0.0.1"
 mode = "single"
 
 [inference.single]
-model = "qwen2.5-coder-7b"   # run `locoder list` to see installed models
+# Recommended models by system RAM (run `locoder list` to see what's installed):
+#   4 GB  → gemma4-e2b    (~3 GB at Q4_K_M)
+#   8 GB  → gemma4-e4b    (~5 GB at Q4_K_M)  ← default for "large" hardware hint
+#   16 GB → qwen2.5-coder-14b or gemma4-e4b
+#   24 GB → gemma4-26b    (~17 GB at UD-Q4_K_XL, MoE — 3.8B active params)
+#   32 GB → gemma4-31b    (~18 GB at Q4_K_M)
+model = "gemma4-e4b"
 port = 8080
 
 [inference.hierarchical]
-planner_model  = "mistral-nemo"
+# gemma4-e4b for both roles keeps total RAM under ~12 GB while still benefiting
+# from the planner/executor split. Swap planner_model to gemma4-26b or gemma4-31b
+# on high-VRAM systems for better planning quality.
+planner_model  = "gemma4-e4b"
 planner_port   = 8081
-executor_model = "qwen2.5-coder-7b"
+executor_model = "gemma4-e4b"
 executor_port  = 8082
 
 [inference.server_args]
@@ -44,8 +53,16 @@ parallel = 4
 dir = "~/.locoder/models"   # global model store, shared across projects
 
 [agent]
-clarification_timeout         = 10    # seconds before proceeding with assumptions; 0 = always wait
-context_compaction_threshold  = 0.80  # fraction of ctx_size that triggers summarisation
+clarification_timeout        = 10    # seconds before proceeding with assumptions; 0 = always wait
+context_compaction_threshold = 0.80  # fraction of ctx_size that triggers summarisation
+
+# Thinking mode (Gemma 4 and compatible models only)
+# When true, Phase 3's agent loop prepends <|think|> to the planner's system message.
+# The model then produces a hidden reasoning block before its visible response.
+# This improves planning quality at the cost of ~2–4× longer first-token latency.
+# Has NO effect until the agent loop (Phase 3) is implemented.
+# To disable: set to false, or swap to a model that does not support thinking tokens.
+thinking_mode = true
 
 [sandbox]
 execution_timeout = 60     # seconds before prompting user to wait or abort

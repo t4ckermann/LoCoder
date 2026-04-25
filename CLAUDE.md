@@ -202,6 +202,7 @@ Rules (in priority order):
 - `raise typer.Exit(1) from None` in CLI except-blocks — the `from None` suppresses chaining (ruff B904).
 - `BaseException` catch in `downloader.py` is intentional (partial-file cleanup on Ctrl-C) — leave it.
 - Bare `except Exception: pass` in `hardware/detect.py` is intentional (optional tools like `nvidia-smi`) — leave it.
+- `thinking_mode = true` in `.locoder.toml` is a Phase 3 flag only — the agent loop that reads it is not yet built. Do not wire it up until Phase 3.
 
 ---
 
