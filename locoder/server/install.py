@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import io
+import json
 import platform
+import re
 import shutil
 import stat
 import tarfile
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 _BIN_DIR = Path("~/.locoder/bin").expanduser()
@@ -50,10 +53,8 @@ def _detect_asset_keyword() -> str:
     raise RuntimeError(f"Unsupported platform: {system}/{machine}")
 
 
-def _latest_release_assets() -> list[dict]:
+def _latest_release_assets() -> list[dict]:  # type: ignore[type-arg]
     """Fetch the asset list from the latest llama.cpp GitHub release."""
-    import json
-
     req = urllib.request.Request(
         _RELEASES_API,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "locoder"},
@@ -66,7 +67,7 @@ def _latest_release_assets() -> list[dict]:
 _ARCHIVE_EXTS = (".zip", ".tar.gz", ".tar.xz", ".tar.bz2")
 
 
-def _pick_asset(assets: list[dict], keyword: str) -> dict:
+def _pick_asset(assets: list[dict], keyword: str) -> dict:  # type: ignore[type-arg]
     """Choose the best asset for this platform from the release asset list."""
     # Skip GPU-specific and exotic variants so we get a CPU-runnable binary by default.
     skip_keywords = {"cuda", "rocm", "vulkan", "kompute", "sycl", "openvino",
@@ -99,7 +100,9 @@ def _pick_asset(assets: list[dict], keyword: str) -> dict:
     return min(candidates, key=lambda a: a.get("size", 0))
 
 
-def download_and_install(progress_callback=None) -> Path:
+def download_and_install(
+    progress_callback: Callable[[int, int | None], None] | None = None,
+) -> Path:
     """
     Download the latest llama-server binary for this platform and install it to
     ~/.locoder/bin/llama-server. Returns the installed path.
@@ -192,8 +195,6 @@ def _create_dylib_symlinks(bin_dir: Path) -> None:
     For every versioned dylib (lib*.X.Y.Z.dylib) in bin_dir, create a
     shorter compatibility symlink (lib*.X.dylib) if it doesn't exist yet.
     """
-    import re
-
     pattern = re.compile(r"^(lib.+?)\.(\d+)\.\d+.*\.dylib$")
     for lib in bin_dir.glob("*.dylib"):
         m = pattern.match(lib.name)

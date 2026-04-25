@@ -16,7 +16,7 @@ def update() -> None:
         console.print(f"[green]Registry updated: {count} models[/green]")
     except Exception as exc:
         console.print(f"[red]Failed to update registry: {exc}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 app.command("update")(update)
