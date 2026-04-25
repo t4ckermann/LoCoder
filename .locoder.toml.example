@@ -1,0 +1,78 @@
+# LoCoder project config — copy to .locoder.toml and run `locoder setup` to populate.
+# .locoder.toml is gitignored (machine-specific paths/ports). This file is committed.
+#
+# Models and the llama-server binary are stored globally in ~/.locoder/ and
+# shared across all projects. Only inference settings and agent behaviour are
+# project-local.
+
+[inference]
+llama_server_bin = "/path/to/llama-server"   # set by `locoder setup`
+host = "127.0.0.1"
+
+# "single"       — one model handles everything (default for < 20 GB RAM)
+# "hierarchical" — separate planner and executor models (> 20 GB RAM)
+mode = "single"
+
+[inference.single]
+# Recommended models by system RAM (run `locoder list` to see what's installed):
+#   4 GB  → gemma4-e2b    (~3 GB at Q4_K_M)
+#   8 GB  → gemma4-e4b    (~5 GB at Q4_K_M)  ← default for "large" hardware hint
+#   16 GB → qwen2.5-coder-14b or gemma4-e4b
+#   24 GB → gemma4-26b    (~17 GB at UD-Q4_K_XL, MoE — 3.8B active params)
+#   32 GB → gemma4-31b    (~18 GB at Q4_K_M)
+model = "gemma4-e4b"
+port = 8080
+
+[inference.hierarchical]
+# gemma4-e4b for both roles keeps total RAM under ~12 GB while still benefiting
+# from the planner/executor split. Swap planner_model to gemma4-26b or gemma4-31b
+# on high-VRAM systems for better planning quality.
+planner_model  = "gemma4-e4b"
+planner_port   = 8081
+executor_model = "gemma4-e4b"
+executor_port  = 8082
+
+[inference.server_args]
+threads     = 8       # physical CPU cores — set by `locoder setup`
+ctx_size    = 32768
+batch_size  = 512
+ubatch_size = 512
+flash_attn  = "on"
+parallel    = 4
+ngl         = 9999    # GPU layers; 9999 = offload all; 0 = CPU-only
+
+[inference.server_args.planner]
+ctx_size = 16384
+parallel = 2
+
+[inference.server_args.executor]
+ctx_size = 32768
+parallel = 4
+
+[models]
+dir = "~/.locoder/models"   # global model store, shared across projects
+
+[agent]
+clarification_timeout        = 10    # seconds before proceeding with assumptions; 0 = always wait
+context_compaction_threshold = 0.80  # fraction of ctx_size that triggers summarisation
+
+# Thinking mode (Gemma 4 and compatible models only)
+# When true, Phase 3's agent loop prepends <|think|> to the planner's system message.
+# The model then produces a hidden reasoning block before its visible response.
+# This improves planning quality at the cost of ~2–4× longer first-token latency.
+# Has NO effect until the agent loop (Phase 3) is implemented.
+# To disable: set to false, or swap to a model that does not support thinking tokens.
+thinking_mode = true
+
+[sandbox]
+execution_timeout = 60     # seconds before prompting user to wait or abort
+max_extensions    = 10     # max times user can extend timeout (0 = unlimited)
+allow_network     = false  # network access during code execution
+
+[rag]
+embeddings_model  = "nomic-embed-text"
+vector_store_dir  = "~/.locoder/vectorstore"
+exclude           = ["**/.git", "**/node_modules", "**/__pycache__", "**/dist", "**/*.lock"]
+chunk_size        = 512
+chunk_overlap     = 64
+top_k             = 5
