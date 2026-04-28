@@ -70,14 +70,24 @@ _ARCHIVE_EXTS = (".zip", ".tar.gz", ".tar.xz", ".tar.bz2")
 def _pick_asset(assets: list[dict], keyword: str) -> dict:  # type: ignore[type-arg]
     """Choose the best asset for this platform from the release asset list."""
     # Skip GPU-specific and exotic variants so we get a CPU-runnable binary by default.
-    skip_keywords = {"cuda", "rocm", "vulkan", "kompute", "sycl", "openvino",
-                     "opencl", "hip", "kleidiai"}
+    skip_keywords = {
+        "cuda",
+        "rocm",
+        "vulkan",
+        "kompute",
+        "sycl",
+        "openvino",
+        "opencl",
+        "hip",
+        "kleidiai",
+    }
 
     def is_archive(name: str) -> bool:
         return any(name.endswith(ext) for ext in _ARCHIVE_EXTS)
 
     candidates = [
-        a for a in assets
+        a
+        for a in assets
         if keyword in a["name"].lower()
         and is_archive(a["name"])
         and not any(s in a["name"].lower() for s in skip_keywords)
@@ -85,10 +95,7 @@ def _pick_asset(assets: list[dict], keyword: str) -> dict:  # type: ignore[type-
 
     if not candidates:
         # Fall back: accept anything matching the platform keyword
-        candidates = [
-            a for a in assets
-            if keyword in a["name"].lower() and is_archive(a["name"])
-        ]
+        candidates = [a for a in assets if keyword in a["name"].lower() and is_archive(a["name"])]
 
     if not candidates:
         raise RuntimeError(

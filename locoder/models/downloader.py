@@ -15,6 +15,7 @@ from rich.progress import (
 )
 
 from locoder.models.registry import lookup
+from locoder.models.selector import select_quant
 
 MODELS_DIR = Path("~/.locoder/models").expanduser()
 
@@ -35,11 +36,14 @@ def download(name: str, quant: str | None = None) -> Path:
             f"Unknown model '{name}'. Run `locoder registry update` or add it to registry.json."
         )
 
-    resolved_quant = quant or entry["default_quant"]
+    if quant:
+        resolved_quant = quant
+    else:
+        from locoder.hardware.detect import available_gb
+
+        resolved_quant = select_quant(name, available_gb())
     # Support {quant} (lowercase, e.g. Qwen) and {QUANT} (uppercase, e.g. bartowski)
-    filename = entry["filename"].format(
-        quant=resolved_quant, QUANT=resolved_quant.upper()
-    )
+    filename = entry["filename"].format(quant=resolved_quant, QUANT=resolved_quant.upper())
     repo_id = entry["repo"]
     dest_dir = model_dir(name)
     dest_dir.mkdir(parents=True, exist_ok=True)
