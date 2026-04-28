@@ -25,7 +25,7 @@ def cpu_physical_cores() -> int:
 
 
 def total_ram_gb() -> float:
-    return psutil.virtual_memory().total / 1e9
+    return float(psutil.virtual_memory().total) / 1e9
 
 
 def vram_gb() -> float | None:
@@ -70,6 +70,13 @@ def find_free_port(start: int) -> int:
                 return port
             except OSError:
                 port += 1
+
+
+def available_gb() -> float:
+    """Return the effective available memory in GB (VRAM if present, else RAM)."""
+    ram = total_ram_gb()
+    vram = vram_gb()
+    return max(ram, vram) if vram is not None else ram
 
 
 def detect() -> HardwareInfo:
