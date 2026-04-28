@@ -72,6 +72,13 @@ def find_free_port(start: int) -> int:
                 port += 1
 
 
+def available_gb() -> float:
+    """Return the effective available memory in GB (VRAM if present, else RAM)."""
+    ram = total_ram_gb()
+    vram = vram_gb()
+    return max(ram, vram) if vram is not None else ram
+
+
 def detect() -> HardwareInfo:
     cores = cpu_physical_cores()
     ram = total_ram_gb()

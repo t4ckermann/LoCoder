@@ -28,9 +28,12 @@ def build_argv(
 ) -> list[str]:
     argv = [
         llama_server_bin,
-        "--model", str(model_path),
-        "--port", str(port),
-        "--host", "127.0.0.1",
+        "--model",
+        str(model_path),
+        "--port",
+        str(port),
+        "--host",
+        "127.0.0.1",
     ]
 
     key_map = {
@@ -96,8 +99,7 @@ def _launch_one(
         _, stderr = proc.communicate(timeout=5)
         tail = stderr.decode(errors="replace")[-2000:]
         raise RuntimeError(
-            f"llama-server ({role}) did not become healthy within 60 s.\n"
-            f"Last stderr:\n{tail}"
+            f"llama-server ({role}) did not become healthy within 60 s.\nLast stderr:\n{tail}"
         )
 
     return ServerHandle(proc=proc, port=port, model_path=model_path, role=role)

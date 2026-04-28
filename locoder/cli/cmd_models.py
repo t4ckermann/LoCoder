@@ -93,8 +93,7 @@ def upgrade(
             raise typer.Exit(1) from None
 
     console.print(
-        f"\n[yellow]Remember to update ~/.locoder/config.toml:[/yellow]\n"
-        f"  model = \"{new_model}\""
+        f'\n[yellow]Remember to update ~/.locoder/config.toml:[/yellow]\n  model = "{new_model}"'
     )
 
 
