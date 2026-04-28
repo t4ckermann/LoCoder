@@ -29,7 +29,12 @@ def is_installed(model_id: str) -> bool:
     return d.is_dir() and any(d.glob("*.gguf"))
 
 
-def download(name: str, quant: str | None = None) -> Path:
+def download(name: str, quant: str | None = None, available_gb: float | None = None) -> Path:
+    """Download a model GGUF.
+
+    available_gb: effective RAM/VRAM available for quant selection. When None and quant
+    is also None, falls back to the registry's default_quant.
+    """
     entry = lookup(name)
     if entry is None:
         raise ValueError(
@@ -38,13 +43,15 @@ def download(name: str, quant: str | None = None) -> Path:
 
     if quant:
         resolved_quant = quant
+    elif available_gb is not None:
+        resolved_quant = select_quant(name, available_gb)
     else:
-        from locoder.hardware.detect import available_gb
-
-        resolved_quant = select_quant(name, available_gb())
+        resolved_quant = str(entry["default_quant"])
     # Support {quant} (lowercase, e.g. Qwen) and {QUANT} (uppercase, e.g. bartowski)
-    filename = entry["filename"].format(quant=resolved_quant, QUANT=resolved_quant.upper())
-    repo_id = entry["repo"]
+    filename: str = str(entry["filename"]).format(
+        quant=resolved_quant, QUANT=resolved_quant.upper()
+    )
+    repo_id: str = str(entry["repo"])
     dest_dir = model_dir(name)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / filename

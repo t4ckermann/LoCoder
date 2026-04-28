@@ -8,13 +8,14 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from locoder.models.downloader import model_dir
 
 
 @dataclass
 class ServerHandle:
-    proc: subprocess.Popen
+    proc: subprocess.Popen[bytes]
     port: int
     model_path: Path
     role: str
@@ -105,10 +106,10 @@ def _launch_one(
     return ServerHandle(proc=proc, port=port, model_path=model_path, role=role)
 
 
-def start_server(mode: str, config: dict) -> list[ServerHandle]:  # type: ignore[type-arg]
+def start_server(mode: str, config: dict[str, Any]) -> list[ServerHandle]:
     inf = config["inference"]
     bin_path: str = inf["llama_server_bin"]
-    shared_args: dict = dict(inf.get("server_args", {}))
+    shared_args: dict[str, Any] = dict(inf.get("server_args", {}))
     # Remove sub-tables before passing as flat args
     shared_args.pop("planner", None)
     shared_args.pop("executor", None)

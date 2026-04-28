@@ -4,6 +4,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from locoder.hardware.detect import available_gb as _available_gb
 from locoder.models.downloader import MODELS_DIR as _MODELS_DIR
 from locoder.models.downloader import download as _download
 from locoder.models.downloader import is_installed
@@ -19,7 +20,7 @@ def pull(
 ) -> None:
     """Download a model from HuggingFace."""
     try:
-        path = _download(model, quant)
+        path = _download(model, quant, None if quant else _available_gb())
         console.print(f"[green]Downloaded to {path}[/green]")
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -73,7 +74,7 @@ def upgrade(
     """Download a better model, then offer to remove the old one."""
     console.print(f"[bold]Downloading [cyan]{new_model}[/cyan]...[/bold]")
     try:
-        path = _download(new_model, quant)
+        path = _download(new_model, quant, None if quant else _available_gb())
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None

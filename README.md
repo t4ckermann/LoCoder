@@ -1,97 +1,167 @@
 # LoCoder
 
-A local-first coding agent powered by [`llama.cpp`](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud, no data leaving your network.
+Local-first coding agent powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud.
+
+> **Status:** Phase 2 complete. CLI, hardware detection, model management, and llama-server launcher are all working. The agent loop (Phase 3) is not yet built.
+
+---
 
 ## Requirements
 
 - Python 3.11+
-- macOS, Linux, or Windows
-- 4 GB+ RAM (8 GB+ recommended)
+- macOS, Linux, or Windows (x86-64 / ARM64)
+- At least 4 GB RAM (8 GB recommended)
 
-## Install
+No GPU required. Apple Silicon unified memory counts as VRAM.
+
+---
+
+## Installation
 
 ```bash
 pip install -e .
 ```
 
+---
+
 ## Quick start
 
 ```bash
-# 1. Run setup in your project directory.
-#    Detects hardware, downloads llama-server, and writes .locoder.toml.
-cd your-project
+# 1. Detect hardware, install llama-server, write .locoder.toml
 locoder setup
 
-# 2. Download a model (first time only — stored globally in ~/.locoder/models/).
+# 2. Download a model (auto-selects quantization for your RAM)
 locoder pull qwen2.5-coder-7b
 
-# 3. Start the agent.
+# 3. Start the server
 locoder start
 ```
 
-## Config
+---
 
-LoCoder uses a **project-local** config file — `.locoder.toml` in your working directory. It is gitignored so machine-specific paths and ports don't end up in version control.
+## Commands
 
-```
-your-project/
-├── .locoder.toml          ← gitignored, created by `locoder setup`
-├── .locoder.toml.example  ← commit this as a template for teammates
-└── ...
-```
+### `locoder setup`
+Detects CPU cores, RAM, and VRAM. Downloads a pre-built `llama-server` binary if one is not on PATH. Writes `.locoder.toml` in the current directory with sensible defaults for your hardware.
 
-Copy `.locoder.toml.example` from this repo as a starting point, or let `locoder setup` generate it from your hardware.
-
-**Resolution order** — LoCoder looks for config in:
-1. `LOCODER_CONFIG` env var (explicit path)
-2. `.locoder.toml` in the current directory
-3. `~/.locoder/config.toml` (global fallback)
-
-Models and the `llama-server` binary are always stored globally in `~/.locoder/` and shared across all projects.
-
-## Models
-
-| Registry name | Size | RAM (Q4_K_M) | Best for |
-| :--- | :--- | :--- | :--- |
-| `qwen2.5-coder-1.5b` | 1.5B | ~1 GB | Low-RAM / quick tasks |
-| `qwen2.5-coder-7b` | 7B | ~5 GB | General coding (default) |
-| `qwen2.5-coder-14b` | 14B | ~9 GB | Higher quality coding |
-| `mistral-nemo` | 12B | ~7 GB | Planning / reasoning |
-| `deepseek-coder-v2-lite` | 16B active | ~10 GB | Code-focused MoE |
-| `gemma4-e2b` | 2.3B active (5.1B total) | ~3 GB | Fastest; constrained systems |
-| `gemma4-e4b` | 4.5B active (8B total) | ~5 GB | **Recommended default** — text, image, audio |
-| `gemma4-26b` | 3.8B active (25.2B total, MoE) | ~17 GB | High-VRAM; 256K context |
-| `gemma4-31b` | 30.7B | ~18 GB | Best quality; high-VRAM only |
-
-### Gemma 4 notes
-
-**Why `gemma4-e4b` over `gemma4-26b`**: the 26B is MoE — it loads 25 GB of weights even though only 3.8B are active per token, causing slow memory bandwidth. The E4B loads only 8 GB total, responds significantly faster, and also supports audio. Use 26B/31B only when quality clearly outweighs latency.
-
-**Thinking mode**: Gemma 4 supports chain-of-thought reasoning via the `<|think|>` token, injected per-request in the chat API. This is a Phase 3 feature — not yet available in the app.
+### `locoder pull <model> [--quant <q>]`
+Downloads a model GGUF from HuggingFace. Without `--quant`, automatically picks the best quantization that fits your available RAM.
 
 ```bash
-locoder pull qwen2.5-coder-7b          # download
-locoder pull gemma4-26b --quant q4_k_m # specific quantization
-locoder list                            # show installed
-locoder upgrade qwen2.5-coder-7b gemma4-26b  # download better, remove old
-locoder remove qwen2.5-coder-7b        # remove
+locoder pull qwen2.5-coder-7b           # auto quant
+locoder pull qwen2.5-coder-7b -q q4_k_m # explicit quant
 ```
 
-## All commands
+### `locoder models list`
+Lists locally installed models with file size.
 
+```bash
+locoder models list   # or: locoder ls
 ```
-locoder setup              Detect hardware, install llama-server, write .locoder.toml
-locoder start              Start server and agent loop
-locoder pull <model>       Download a model
-locoder list / ls          List installed models
-locoder remove <model>     Remove an installed model
-locoder upgrade <old> <new>  Download new model, offer to remove old
-locoder registry update    Fetch latest model registry from GitHub
-locoder --version          Show version
+
+### `locoder models remove <model>`
+Removes an installed model (with confirmation prompt).
+
+### `locoder models upgrade <old> <new>`
+Downloads a new model, then offers to remove the old one to free disk space.
+
+```bash
+locoder models upgrade qwen2.5-coder-1.5b qwen2.5-coder-7b
 ```
+
+### `locoder registry list`
+Lists all models available in the registry with RAM tier, parameter count, and install status.
+
+```bash
+locoder registry list   # or: locoder registry ls
+```
+
+### `locoder registry update`
+Fetches the latest registry from GitHub and saves it to `~/.locoder/registry.json`.
+
+### `locoder start`
+Starts the llama-server subprocess(es) and (eventually) the agent loop. Currently parks after server startup — the agent loop is Phase 3.
+
+---
+
+## Model catalog
+
+Pick based on your available RAM. "Installed RAM" means combined RAM+VRAM on Apple Silicon.
+
+| Model | RAM needed | Params | Notes |
+|---|---|---|---|
+| `phi-3.5-mini` | 4 GB | 3.8B | Best ultra-low-RAM option |
+| `qwen2.5-coder-1.5b` | 4 GB | 1.5B | Fastest, smallest footprint |
+| `gemma4-e2b` | 4 GB | 5.1B | 2.3B active params; thinking mode |
+| `qwen2.5-coder-7b` | 8 GB | 7.6B | Recommended default; excellent code quality |
+| `gemma4-e4b` | 8 GB | 8.0B | 4.5B active; thinking mode; planner default |
+| `deepseek-coder-v2-lite` | 8 GB | 16B | FIM support; strong code model |
+| `mistral-nemo` | 12 GB | 12.2B | Best native tool calling; good planner |
+| `phi-4` | 16 GB | 14B | Strong reasoning; needs `--jinja` for tool calls |
+| `qwen2.5-coder-14b` | 16 GB | 14.8B | Best code quality in mid-tier |
+
+### Quantization guide
+
+| Quant | Quality | Notes |
+|---|---|---|
+| `q8_0` | Near-lossless | Highest quality, largest file |
+| `q6_k` | Near-lossless | Good when VRAM headroom exists |
+| **`q5_k_m`** | **Excellent** | **Recommended default for coding** |
+| `q4_k_m` | Good | Default for CPU-only inference |
+| `q3_k_m` | Acceptable | Sub-4 GB devices only |
+| `q2_k` | Poor | Emergency / extremely low RAM |
+
+---
 
 ## Inference modes
 
-**Single** (default for < 20 GB RAM): one model handles everything.
+LoCoder supports two modes, set automatically by `locoder setup` based on your RAM. You can override `mode` in `.locoder.toml` at any time.
 
-**Hierarchical** (> 20 GB RAM, or set manually): separate planner and executor models on different ports. Set `mode = "hierarchical"` in `.locoder.toml` and configure `planner_model` / `executor_model`.
+### `mode = "single"` (< 20 GB)
+One model handles everything. Lower RAM requirement, simpler setup.
+
+### `mode = "hierarchical"` (≥ 20 GB)
+Two models running on separate ports:
+- **Planner** (default: `gemma4-e4b`, port 8081) — task decomposition and reasoning
+- **Executor** (default: `qwen2.5-coder-7b`, port 8082) — code generation
+
+---
+
+## Config
+
+`locoder setup` writes `.locoder.toml` in the current directory (gitignored). The global fallback is `~/.locoder/config.toml`. Override the path with `LOCODER_CONFIG`.
+
+Key settings:
+
+```toml
+[inference]
+mode = "single"           # "single" or "hierarchical"
+llama_server_bin = "..."  # path to llama-server
+
+[inference.single]
+model = "qwen2.5-coder-7b"
+port = 8080
+
+[inference.hierarchical]
+planner_model = "gemma4-e4b"
+planner_port = 8081
+executor_model = "qwen2.5-coder-7b"
+executor_port = 8082
+
+[models]
+dir = "~/.locoder/models"
+```
+
+---
+
+## Project layout
+
+```
+locoder/
+  cli/        # typer commands
+  config/     # TOML read/write
+  hardware/   # CPU/RAM/VRAM detection, port allocation
+  models/     # registry, downloader, quant selector, OpenAI-compat client
+  server/     # llama-server install and launcher
+  data/       # bundled registry.json
+```
