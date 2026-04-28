@@ -13,6 +13,7 @@ import urllib.request
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 _BIN_DIR = Path("~/.locoder/bin").expanduser()
 _INSTALLED_BIN = _BIN_DIR / "llama-server"
@@ -53,31 +54,42 @@ def _detect_asset_keyword() -> str:
     raise RuntimeError(f"Unsupported platform: {system}/{machine}")
 
 
-def _latest_release_assets() -> list[dict]:  # type: ignore[type-arg]
+def _latest_release_assets() -> list[dict[str, Any]]:
     """Fetch the asset list from the latest llama.cpp GitHub release."""
     req = urllib.request.Request(
         _RELEASES_API,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "locoder"},
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
-        data = json.loads(resp.read())
-    return data.get("assets", [])
+        data: dict[str, Any] = json.loads(resp.read())
+    assets: list[dict[str, Any]] = data.get("assets", [])
+    return assets
 
 
 _ARCHIVE_EXTS = (".zip", ".tar.gz", ".tar.xz", ".tar.bz2")
 
 
-def _pick_asset(assets: list[dict], keyword: str) -> dict:  # type: ignore[type-arg]
+def _pick_asset(assets: list[dict[str, Any]], keyword: str) -> dict[str, Any]:
     """Choose the best asset for this platform from the release asset list."""
     # Skip GPU-specific and exotic variants so we get a CPU-runnable binary by default.
-    skip_keywords = {"cuda", "rocm", "vulkan", "kompute", "sycl", "openvino",
-                     "opencl", "hip", "kleidiai"}
+    skip_keywords = {
+        "cuda",
+        "rocm",
+        "vulkan",
+        "kompute",
+        "sycl",
+        "openvino",
+        "opencl",
+        "hip",
+        "kleidiai",
+    }
 
     def is_archive(name: str) -> bool:
         return any(name.endswith(ext) for ext in _ARCHIVE_EXTS)
 
     candidates = [
-        a for a in assets
+        a
+        for a in assets
         if keyword in a["name"].lower()
         and is_archive(a["name"])
         and not any(s in a["name"].lower() for s in skip_keywords)
@@ -85,10 +97,7 @@ def _pick_asset(assets: list[dict], keyword: str) -> dict:  # type: ignore[type-
 
     if not candidates:
         # Fall back: accept anything matching the platform keyword
-        candidates = [
-            a for a in assets
-            if keyword in a["name"].lower() and is_archive(a["name"])
-        ]
+        candidates = [a for a in assets if keyword in a["name"].lower() and is_archive(a["name"])]
 
     if not candidates:
         raise RuntimeError(
@@ -146,40 +155,40 @@ def download_and_install(
                     f"llama-server binary not found in zip. Contents: {zf.namelist()[:20]}"
                 )
             # Extract everything flat into _BIN_DIR (strip any leading directory)
-            for member in zf.infolist():
-                filename = Path(member.filename).name
+            for zi in zf.infolist():
+                filename = Path(zi.filename).name
                 if not filename:
                     continue
                 dest = _BIN_DIR / filename
-                with zf.open(member) as src, dest.open("wb") as dst:
+                with zf.open(zi) as src, dest.open("wb") as dst:
                     shutil.copyfileobj(src, dst)
                 # Restore executable bit from zip external_attr
-                if member.external_attr >> 16 & 0o111:
+                if zi.external_attr >> 16 & 0o111:
                     dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
     else:
         # tar.gz / tar.xz / tar.bz2
         with tarfile.open(fileobj=buf, mode="r:*") as tf:
-            members = [m for m in tf.getmembers() if m.isfile()]
+            ti_members = [m for m in tf.getmembers() if m.isfile()]
             if not any(
                 m.name.endswith("llama-server") or m.name.endswith("llama-server.exe")
-                for m in members
+                for m in ti_members
             ):
                 raise RuntimeError(
                     f"llama-server binary not found in archive. "
-                    f"Contents: {[m.name for m in members[:20]]}"
+                    f"Contents: {[m.name for m in ti_members[:20]]}"
                 )
-            for member in members:
-                filename = Path(member.name).name
+            for ti in ti_members:
+                filename = Path(ti.name).name
                 if not filename:
                     continue
                 dest = _BIN_DIR / filename
-                f = tf.extractfile(member)
+                f = tf.extractfile(ti)
                 if f is None:
                     continue
                 with dest.open("wb") as dst:
                     shutil.copyfileobj(f, dst)
                 # Restore executable bit from tar mode
-                if member.mode & 0o111:
+                if ti.mode & 0o111:
                     dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
 
     # Create missing compatibility symlinks for versioned dylibs.

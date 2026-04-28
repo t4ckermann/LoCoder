@@ -15,6 +15,7 @@ from rich.progress import (
 )
 
 from locoder.models.registry import lookup
+from locoder.models.selector import select_quant
 
 MODELS_DIR = Path("~/.locoder/models").expanduser()
 
@@ -28,19 +29,29 @@ def is_installed(model_id: str) -> bool:
     return d.is_dir() and any(d.glob("*.gguf"))
 
 
-def download(name: str, quant: str | None = None) -> Path:
+def download(name: str, quant: str | None = None, available_gb: float | None = None) -> Path:
+    """Download a model GGUF.
+
+    available_gb: effective RAM/VRAM available for quant selection. When None and quant
+    is also None, falls back to the registry's default_quant.
+    """
     entry = lookup(name)
     if entry is None:
         raise ValueError(
             f"Unknown model '{name}'. Run `locoder registry update` or add it to registry.json."
         )
 
-    resolved_quant = quant or entry["default_quant"]
+    if quant:
+        resolved_quant = quant
+    elif available_gb is not None:
+        resolved_quant = select_quant(name, available_gb)
+    else:
+        resolved_quant = str(entry["default_quant"])
     # Support {quant} (lowercase, e.g. Qwen) and {QUANT} (uppercase, e.g. bartowski)
-    filename = entry["filename"].format(
+    filename: str = str(entry["filename"]).format(
         quant=resolved_quant, QUANT=resolved_quant.upper()
     )
-    repo_id = entry["repo"]
+    repo_id: str = str(entry["repo"])
     dest_dir = model_dir(name)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / filename

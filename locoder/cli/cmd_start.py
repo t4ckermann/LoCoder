@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import typer
 from rich.console import Console
 
 from locoder.config.manager import read_config
+from locoder.hardware.detect import available_gb as _available_gb
 from locoder.models.downloader import download, is_installed
 from locoder.models.registry import lookup
 from locoder.server.launcher import start_server, stop_servers
@@ -13,7 +15,7 @@ from locoder.server.launcher import start_server, stop_servers
 console = Console()
 
 
-def _required_models(mode: str, config: dict) -> list[str]:  # type: ignore[type-arg]
+def _required_models(mode: str, config: dict[str, Any]) -> list[str]:
     if mode == "single":
         return [config["inference"]["single"]["model"]]
     if mode == "hierarchical":
@@ -50,7 +52,7 @@ def start() -> None:
             if not typer.confirm(f"Download '{model_name}' now?", default=True):
                 raise typer.Exit(0)
             try:
-                download(model_name)
+                download(model_name, available_gb=_available_gb())
             except ValueError as exc:
                 console.print(f"[red]{exc}[/red]")
                 raise typer.Exit(1) from None

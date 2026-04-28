@@ -15,12 +15,28 @@ ruff format --check locoder/
 
 # 3. Type check
 mypy locoder/
+
+# 4. Tests
+pytest
 ```
 
-If `ruff` or `mypy` are not installed:
+If dev tools are not installed:
 ```bash
 pip install -e ".[dev]"
 ```
+
+---
+
+## ⛔ MANDATORY: Keep README.md current
+
+After every task that adds, removes, or changes user-visible behaviour (commands, flags, config keys, models, modes), update `README.md` before finishing. Specifically:
+
+- New CLI command or flag → add it to the Commands section
+- Model added/removed from `registry.json` → update the model catalog table
+- New config key → add it to the Config section
+- Inference mode or behaviour change → update the relevant section
+
+Do **not** update the README for internal refactors, test additions, or type annotation fixes that have no user-visible effect.
 
 ---
 
@@ -37,6 +53,19 @@ Check every item before finishing. Fail = do not proceed.
 | 5 | No unused imports | ruff `F401` |
 | 6 | No duplicated constants — import the source of truth, never redefine | Manual review |
 | 7 | `raise typer.Exit(N) from None` in all CLI except-blocks — no raw tracebacks to user | ruff `B904` |
+
+---
+
+## Testing
+
+Tests live in `tests/`. Run with `pytest` (configured in `pyproject.toml`).
+
+**What to test:**
+- Pure logic only — `selector.py`, `registry.py`, `launcher.build_argv`, `client.py` helpers. These have no I/O.
+- Structural properties (frozen dataclasses, required registry keys) belong in tests too.
+- Do **not** test functions that download files, spawn subprocesses, or hit real ports — those are integration concerns.
+
+**What not to mock:** the bundled `registry.json` is package data and safe to read in tests without mocking.
 
 ---
 
@@ -227,5 +256,8 @@ locoder/
 | `models/` | `data/` only (within `locoder/`) |
 | `config/` | `hardware/` |
 | `hardware/` | nothing within `locoder/` |
+
+> `models/` must not import from `hardware/`. If a function needs available RAM, accept it as a
+> plain `float` parameter — the `cli/` layer calls `hardware.detect.available_gb()` and passes it in.
 
 Cycles are forbidden. If you need to break a cycle, introduce a `Protocol` in the lower module and depend on that instead of the concrete upper module.

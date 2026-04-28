@@ -3,37 +3,49 @@
     "repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
     "default_quant": "q5_k_m",
     "filename": "qwen2.5-coder-7b-instruct-{quant}.gguf",
-    "ram_tier": "8gb"
+    "ram_tier": "8gb",
+    "params_b": 7.6,
+    "available_quants": ["q2_k", "q3_k_m", "q4_k_m", "q5_k_m", "q6_k", "q8_0"]
   },
   "qwen2.5-coder-1.5b": {
     "repo": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
     "default_quant": "q5_k_m",
     "filename": "qwen2.5-coder-1.5b-instruct-{quant}.gguf",
-    "ram_tier": "4gb"
+    "ram_tier": "4gb",
+    "params_b": 1.5,
+    "available_quants": ["q2_k", "q3_k_m", "q4_k_m", "q5_k_m", "q6_k", "q8_0"]
   },
   "qwen2.5-coder-14b": {
     "repo": "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
     "default_quant": "q4_k_m",
     "filename": "qwen2.5-coder-14b-instruct-{quant}.gguf",
-    "ram_tier": "16gb"
+    "ram_tier": "16gb",
+    "params_b": 14.8,
+    "available_quants": ["q2_k", "q3_k_m", "q4_k_m", "q5_k_m", "q6_k", "q8_0"]
   },
   "mistral-nemo": {
     "repo": "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
     "default_quant": "q5_k_m",
     "filename": "Mistral-Nemo-Instruct-2407-{QUANT}.gguf",
-    "ram_tier": "12gb"
+    "ram_tier": "12gb",
+    "params_b": 12.2,
+    "available_quants": ["q2_k", "q3_k_m", "q4_k_m", "q5_k_m", "q6_k", "q8_0"]
   },
   "deepseek-coder-v2-lite": {
     "repo": "bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF",
     "default_quant": "q5_k_m",
     "filename": "DeepSeek-Coder-V2-Lite-Instruct-{QUANT}.gguf",
-    "ram_tier": "8gb"
+    "ram_tier": "8gb",
+    "params_b": 16.0,
+    "available_quants": ["q2_k", "q3_k_m", "q4_k_m", "q5_k_m", "q6_k", "q8_0"]
   },
   "gemma4-e2b": {
     "repo": "unsloth/gemma-4-E2B-it-GGUF",
     "default_quant": "Q4_K_M",
     "filename": "gemma-4-E2B-it-{QUANT}.gguf",
     "ram_tier": "4gb",
+    "params_b": 5.1,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
     "notes": "2.3B active params (5.1B with embeddings). Text + image + audio. 128K ctx. Thinking mode: prepend <|think|> to system message."
   },
   "gemma4-e4b": {
@@ -41,6 +53,8 @@
     "default_quant": "Q4_K_M",
     "filename": "gemma-4-E4B-it-{QUANT}.gguf",
     "ram_tier": "8gb",
+    "params_b": 8.0,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
     "notes": "4.5B active params (8B with embeddings). Text + image + audio. 128K ctx. Recommended replacement for gemma4-26b on memory-constrained systems. Thinking mode: prepend <|think|> to system message."
   },
   "gemma4-26b": {
@@ -48,6 +62,7 @@
     "default_quant": "UD-Q4_K_XL",
     "filename": "gemma-4-26B-A4B-it-{QUANT}.gguf",
     "ram_tier": "24gb",
+    "params_b": 25.2,
     "notes": "MoE: 3.8B active / 25.2B total. Text + image. 256K ctx. Thinking mode: prepend <|think|> to system message."
   },
   "gemma4-31b": {
@@ -55,6 +70,44 @@
     "default_quant": "Q4_K_M",
     "filename": "gemma-4-31B-it-{QUANT}.gguf",
     "ram_tier": "32gb",
+    "params_b": 31.0,
+    "available_quants": ["q4_k_m", "q5_k_m"],
     "notes": "31B dense. Text + image. 256K ctx. Best overall quality. Thinking mode: prepend <|think|> to system message."
+  },
+  "phi-4": {
+    "repo": "bartowski/phi-4-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "phi-4-{QUANT}.gguf",
+    "ram_tier": "16gb",
+    "params_b": 14.0,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "14B reasoning-focused model. Requires --jinja flag for native tool calling; use grammar enforcement otherwise."
+  },
+  "phi-3.5-mini": {
+    "repo": "bartowski/Phi-3.5-mini-instruct-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "Phi-3.5-mini-instruct-{QUANT}.gguf",
+    "ram_tier": "4gb",
+    "params_b": 3.8,
+    "available_quants": ["q2_k", "q3_k_m", "q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "3.8B. Best choice when RAM is the primary constraint."
+  },
+  "codellama-7b": {
+    "repo": "TheBloke/CodeLlama-7B-Instruct-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "codellama-7b-instruct.{quant}.gguf",
+    "ram_tier": "8gb",
+    "params_b": 7.0,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "Instruction following only. Does not support native tool calling — requires GBNF grammar enforcement."
+  },
+  "codellama-13b": {
+    "repo": "TheBloke/CodeLlama-13B-Instruct-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "codellama-13b-instruct.{quant}.gguf",
+    "ram_tier": "16gb",
+    "params_b": 13.0,
+    "available_quants": ["q4_k_m", "q5_k_m"],
+    "notes": "Instruction following only. Does not support native tool calling — requires GBNF grammar enforcement."
   }
 }
