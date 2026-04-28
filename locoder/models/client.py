@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
+
 from openai import AsyncOpenAI
 
 # Models that support Gemma 4 thinking mode via <|think|> prefix
 _THINKING_MODELS = frozenset({"gemma4-e2b", "gemma4-e4b", "gemma4-26b", "gemma4-31b"})
 
 
-def get_client(config: dict, role: str = "single") -> AsyncOpenAI:  # type: ignore[type-arg]
+def get_client(config: dict[str, Any], role: str = "single") -> AsyncOpenAI:
     """Return an OpenAI-compatible async client pointed at the local llama-server.
 
     role: "single" | "planner" | "executor"
@@ -31,7 +33,7 @@ def get_client(config: dict, role: str = "single") -> AsyncOpenAI:  # type: igno
     )
 
 
-def active_model_name(config: dict, role: str = "single") -> str:  # type: ignore[type-arg]
+def active_model_name(config: dict[str, Any], role: str = "single") -> str:
     """Return the configured model name for the given role."""
     inf = config["inference"]
     mode: str = inf["mode"]

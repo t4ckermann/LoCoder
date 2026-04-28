@@ -73,5 +73,41 @@
     "params_b": 31.0,
     "available_quants": ["q4_k_m", "q5_k_m"],
     "notes": "31B dense. Text + image. 256K ctx. Best overall quality. Thinking mode: prepend <|think|> to system message."
+  },
+  "phi-4": {
+    "repo": "bartowski/phi-4-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "phi-4-{QUANT}.gguf",
+    "ram_tier": "16gb",
+    "params_b": 14.0,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "14B reasoning-focused model. Requires --jinja flag for native tool calling; use grammar enforcement otherwise."
+  },
+  "phi-3.5-mini": {
+    "repo": "bartowski/Phi-3.5-mini-instruct-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "Phi-3.5-mini-instruct-{QUANT}.gguf",
+    "ram_tier": "4gb",
+    "params_b": 3.8,
+    "available_quants": ["q2_k", "q3_k_m", "q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "3.8B. Best choice when RAM is the primary constraint."
+  },
+  "codellama-7b": {
+    "repo": "TheBloke/CodeLlama-7B-Instruct-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "codellama-7b-instruct.{quant}.gguf",
+    "ram_tier": "8gb",
+    "params_b": 7.0,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "Instruction following only. Does not support native tool calling — requires GBNF grammar enforcement."
+  },
+  "codellama-13b": {
+    "repo": "TheBloke/CodeLlama-13B-Instruct-GGUF",
+    "default_quant": "q4_k_m",
+    "filename": "codellama-13b-instruct.{quant}.gguf",
+    "ram_tier": "16gb",
+    "params_b": 13.0,
+    "available_quants": ["q4_k_m", "q5_k_m"],
+    "notes": "Instruction following only. Does not support native tool calling — requires GBNF grammar enforcement."
   }
 }

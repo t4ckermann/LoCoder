@@ -1,0 +1,58 @@
+[inference]
+llama_server_bin = "/Users/trishbook/.locoder/bin/llama-server"
+host = "127.0.0.1"
+mode = "single"
+
+[inference.single]
+model = "qwen2.5-coder-7b"
+port = 8080
+
+[inference.hierarchical]
+planner_model = "gemma4-e4b"
+planner_port = 8081
+executor_model = "qwen2.5-coder-7b"
+executor_port = 8082
+
+[inference.server_args]
+threads = 10
+ctx_size = 32768
+batch_size = 512
+ubatch_size = 512
+flash_attn = "on"
+parallel = 4
+ngl = 9999
+
+[inference.server_args.planner]
+ctx_size = 16384
+parallel = 2
+
+[inference.server_args.executor]
+ctx_size = 32768
+parallel = 4
+
+[models]
+dir = "~/.locoder/models"
+
+[agent]
+clarification_timeout = 10
+context_compaction_threshold = 0.8
+thinking_mode = true
+
+[sandbox]
+execution_timeout = 60
+max_extensions = 10
+allow_network = false
+
+[rag]
+embeddings_model = "nomic-embed-text"
+vector_store_dir = "~/.locoder/vectorstore"
+exclude = [
+    "**/.git",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/dist",
+    "**/*.lock",
+]
+chunk_size = 512
+chunk_overlap = 64
+top_k = 5

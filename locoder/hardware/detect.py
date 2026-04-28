@@ -25,7 +25,7 @@ def cpu_physical_cores() -> int:
 
 
 def total_ram_gb() -> float:
-    return psutil.virtual_memory().total / 1e9
+    return float(psutil.virtual_memory().total) / 1e9
 
 
 def vram_gb() -> float | None:
