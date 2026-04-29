@@ -55,6 +55,8 @@ After every task that adds, removes, or changes user-visible behaviour (commands
 
 Do **not** update the README for internal refactors, test additions, or type annotation fixes that have no user-visible effect.
 
+**Keep README concise.** Every update is also an opportunity to remove or condense existing content. Prefer one-liners over paragraphs; prefer a single table row over a prose description. If a section grows beyond what a new user needs in 30 seconds, cut it.
+
 ---
 
 ## ⛔ MANDATORY: Sanity checklist

@@ -44,6 +44,7 @@ def build_argv(
         "ubatch_size": "--ubatch-size",
         "parallel": "--parallel",
         "ngl": "-ngl",
+        "draft_max": "--draft-max",
     }
 
     for cfg_key, flag in key_map.items():
@@ -53,6 +54,9 @@ def build_argv(
     # flash_attn takes a value: "on", "off", or "auto"
     flash = args.get("flash_attn", "auto")
     argv += ["--flash-attn", str(flash)]
+
+    if "model_draft" in args:
+        argv += ["--model-draft", str(args["model_draft"])]
 
     return argv
 
@@ -113,6 +117,13 @@ def start_server(config: dict[str, Any]) -> ServerHandle:
     model_name: str = inf["single"]["model"]
     port: int = inf["single"]["port"]
     gguf = _resolve_gguf(model_name)
+
+    spec = inf.get("speculative", {})
+    if spec.get("enabled", False):
+        draft_name: str = spec["model_draft"]
+        server_args["model_draft"] = str(_resolve_gguf(draft_name))
+        server_args["draft_max"] = int(spec.get("draft_max", 8))
+
     handle = _launch_one(bin_path, gguf, port, server_args, "single")
     atexit.register(stop_server, handle)
     return handle

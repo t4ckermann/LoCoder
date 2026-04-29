@@ -57,3 +57,22 @@ def test_build_argv_unknown_key_ignored() -> None:
     # Keys not in key_map should not appear as flags
     argv = build_argv("/bin/llama-server", Path("/tmp/m.gguf"), 8080, {"planner": {"ctx_size": 1}})
     assert "--planner" not in argv
+
+
+def test_build_argv_speculative_decoding() -> None:
+    argv = build_argv(
+        "/bin/llama-server",
+        Path("/tmp/main.gguf"),
+        8080,
+        {"model_draft": "/tmp/draft.gguf", "draft_max": 8},
+    )
+    assert "--model-draft" in argv
+    assert argv[argv.index("--model-draft") + 1] == "/tmp/draft.gguf"
+    assert "--draft-max" in argv
+    assert argv[argv.index("--draft-max") + 1] == "8"
+
+
+def test_build_argv_no_draft_flags_when_absent() -> None:
+    argv = build_argv("/bin/llama-server", Path("/tmp/m.gguf"), 8080, {})
+    assert "--model-draft" not in argv
+    assert "--draft-max" not in argv

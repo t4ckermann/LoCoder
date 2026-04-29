@@ -59,9 +59,26 @@ def read_config() -> dict[str, Any]:
         return tomllib.load(f)
 
 
+_CTX_SIZE: dict[str, int] = {
+    "small": 8192,
+    "mid": 32768,
+    "large": 65536,
+}
+
+
+def _parallel_slots(cores: int, has_gpu: bool) -> int:
+    if not has_gpu:
+        return 1
+    if cores <= 4:
+        return 2
+    return 4
+
+
 def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
     model = _HINT_TO_MODEL.get(hw.model_hint, "qwen2.5-coder-7b")
     ngl = 9999 if hw.vram_gb is not None else 0
+    ctx_size = _CTX_SIZE[hw.model_hint]
+    parallel = _parallel_slots(hw.cpu_cores, hw.vram_gb is not None)
 
     config: dict[str, Any] = {
         "inference": {
@@ -74,11 +91,11 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
             },
             "server_args": {
                 "threads": hw.cpu_cores,
-                "ctx_size": 32768,
+                "ctx_size": ctx_size,
                 "batch_size": 512,
                 "ubatch_size": 512,
                 "flash_attn": "on",
-                "parallel": 4,
+                "parallel": parallel,
                 "ngl": ngl,
             },
         },
