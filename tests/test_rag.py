@@ -44,7 +44,7 @@ def test_collect_files_exclude_pattern(tmp_path):
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "bundle.js").write_text("built")
-    config: dict = {"rag": {"exclude": ["**/dist"]}}
+    config: dict = {"rag": {"exclude": ["**/dist/**"]}}
     files = _collect_files(tmp_path, config)
     names = {f.name for f in files}
     assert "app.py" in names
