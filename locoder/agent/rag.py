@@ -10,12 +10,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pathspec
+from rich.console import Console
+
+from locoder.constants import DEFAULT_EMBED_MODEL
 
 if TYPE_CHECKING:
     from chromadb.api.types import IncludeEnum
+    from fastembed import TextEmbedding
 
 _MAX_FILES_WARN = 5_000
-_EMBED_MODEL = "nomic-ai/nomic-embed-text-v1.5"
 
 # Suppress chromadb telemetry. Must be set before `import chromadb` (which is a lazy import
 # inside functions below). posthog v7 also changed capture() to 1-arg; chromadb calls the old
@@ -93,7 +96,7 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
-def _load_embedder(model_name: str, console: Any | None, _retry: bool = False) -> Any:
+def _load_embedder(model_name: str, console: Console | None, _retry: bool = False) -> TextEmbedding:
     """Return a TextEmbedding instance, auto-clearing a partial cache on first failure."""
     from fastembed import TextEmbedding
 
@@ -115,7 +118,9 @@ def _load_embedder(model_name: str, console: Any | None, _retry: bool = False) -
         raise
 
 
-def index_workspace(workspace: Path, config: dict[str, Any], console: Any | None = None) -> None:
+def index_workspace(
+    workspace: Path, config: dict[str, Any], console: Console | None = None
+) -> None:
     """Chunk and upsert all workspace files into ChromaDB. Imports are deferred."""
     # Late imports — ChromaDB adds ~1-2s startup cost; don't pay it at module load.
     import chromadb
@@ -126,7 +131,7 @@ def index_workspace(workspace: Path, config: dict[str, Any], console: Any | None
     ).expanduser()
     chunk_size: int = int(rag_cfg.get("chunk_size", 512))
     overlap: int = int(rag_cfg.get("chunk_overlap", 64))
-    embed_model_name: str = str(rag_cfg.get("embeddings_model", _EMBED_MODEL))
+    embed_model_name: str = str(rag_cfg.get("embeddings_model", DEFAULT_EMBED_MODEL))
 
     files = _collect_files(workspace, config)
 
@@ -198,7 +203,7 @@ def search(query: str, config: dict[str, Any], workspace: Path) -> str:
         str(rag_cfg.get("vector_store_dir", "~/.locoder/vectorstore"))
     ).expanduser()
     top_k: int = int(rag_cfg.get("top_k", 5))
-    embed_model_name: str = str(rag_cfg.get("embeddings_model", _EMBED_MODEL))
+    embed_model_name: str = str(rag_cfg.get("embeddings_model", DEFAULT_EMBED_MODEL))
 
     if not vector_store_dir.exists():
         return "Knowledge base not yet indexed — run /reindex or restart LoCoder."

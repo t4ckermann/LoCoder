@@ -16,8 +16,8 @@ _SUPPORTED: dict[str, str] = {
 def run_code(
     code: str,
     language: str,
-    config: dict[str, Any],
     workspace: Path,
+    timeout: int = 60,
 ) -> dict[str, Any]:
     """Execute *code* in a sandboxed subprocess inside *workspace*.
 
@@ -32,8 +32,6 @@ def run_code(
             "exit_code": 1,
         }
 
-    sandbox_cfg: dict[str, Any] = config.get("sandbox", {})
-    timeout: int = int(sandbox_cfg.get("execution_timeout", 60))
     suffix = ".py" if lang == "python" else ".sh"
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as fh:

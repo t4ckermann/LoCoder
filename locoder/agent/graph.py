@@ -66,11 +66,12 @@ def _dispatch(
     if name == "write_file":
         return tools.write_file(str(args.get("path", "")), str(args.get("content", "")), workspace)
     if name == "run_code":
+        timeout = int(config.get("sandbox", {}).get("execution_timeout", 60))
         result = sandbox.run_code(
             str(args.get("code", "")),
             str(args.get("language", "python")),
-            config,
             workspace,
+            timeout=timeout,
         )
         return (
             f"exit_code: {result['exit_code']}\n"

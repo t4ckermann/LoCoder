@@ -12,7 +12,7 @@ QUANT_LADDER: list[tuple[str, float]] = [
     ("q2_k", 2.50),
 ]
 _LADDER_NAMES = [name for name, _ in QUANT_LADDER]
-_BPW = dict(QUANT_LADDER)
+_BPW: dict[str, float] = dict(QUANT_LADDER)
 
 # Reserve 15 % of available RAM for OS/KV-cache headroom
 _HEADROOM = 1.15

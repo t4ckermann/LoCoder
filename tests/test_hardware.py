@@ -27,7 +27,7 @@ def test_hardware_info_is_frozen() -> None:
         free_port_single=8080,
         model_hint="mid",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         hw.cpu_cores = 8  # type: ignore[misc]
 
 
