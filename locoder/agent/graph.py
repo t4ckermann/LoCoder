@@ -12,7 +12,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from rich.console import Console
 from typing_extensions import TypedDict
 
-from locoder.agent import prompts, sandbox, tools
+from locoder.agent import history, prompts, sandbox, tools
 from locoder.agent.schema import Answer, ToolCall, parse_plan
 from locoder.models.client import (
     active_model_name,
@@ -85,6 +85,8 @@ def _dispatch(
             str(args.get("path", ".")),
             workspace,
         )
+    if name == "search_knowledge_base":
+        return tools.search_knowledge_base(str(args.get("query", "")), workspace, config)
     return f"Unknown tool: {name!r}"
 
 
@@ -270,8 +272,9 @@ def run_agent(
 ) -> None:
     """Run the agent graph for a single user task."""
     app = make_graph(config, workspace, console, thinking_mode)
+    prior_messages = history.load(workspace)
     initial: AgentState = {
-        "messages": [],
+        "messages": prior_messages,
         "task": task,
         "iterations": 0,
         "written_files": [],
@@ -283,3 +286,4 @@ def run_agent(
     final: AgentState = app.invoke(initial)
     if final.get("answer"):
         console.print(f"\n[bold green]Done.[/bold green] {final['answer']}")
+    history.save(workspace, final["messages"])

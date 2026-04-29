@@ -5,11 +5,13 @@ from pathlib import Path
 from locoder.agent.schema import TOOL_NAMES
 
 _TOOLS_DOC = """
-read_file(path)            — read a file relative to the workspace root
-write_file(path, content)  — write (or overwrite) a file; creates parent dirs
-run_code(code, language)   — execute code ("python", "bash"); returns stdout/stderr/exit_code
-list_directory(path)       — list entries in a directory
-search_codebase(query, path) — case-insensitive substring search across files (path defaults to ".")
+read_file(path)               — read a file relative to the workspace root
+write_file(path, content)     — write (or overwrite) a file; creates parent dirs
+run_code(code, language)      — execute code ("python", "bash"); returns stdout/stderr/exit_code
+list_directory(path)          — list entries in a directory
+search_knowledge_base(query)  — semantic search over indexed codebase; prefer for concept/intent
+                                queries when the index is current (no stale-file warning)
+search_codebase(query, path)  — exact substring search; use for known symbols or when RAG is stale
 """.strip()
 
 _PLAN_FORMAT = """

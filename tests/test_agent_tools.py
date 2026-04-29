@@ -81,7 +81,8 @@ class TestSearchCodebase:
 
 
 class TestSearchKnowledgeBase:
-    def test_returns_stub(self):  # type: ignore[no-untyped-def]
-        result = search_knowledge_base("anything")
+    def test_returns_not_indexed_when_no_store(self, tmp_path):  # type: ignore[no-untyped-def]
+        config: dict = {"rag": {"vector_store_dir": str(tmp_path / "nonexistent")}}
+        result = search_knowledge_base("anything", tmp_path, config)
         assert isinstance(result, str)
-        assert "not yet available" in result
+        assert "not yet indexed" in result.lower()

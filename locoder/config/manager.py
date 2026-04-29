@@ -116,7 +116,7 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
             "allow_network": False,
         },
         "rag": {
-            "embeddings_model": "nomic-embed-text",
+            "embeddings_model": "nomic-ai/nomic-embed-text-v1.5",
             "vector_store_dir": "~/.locoder/vectorstore",
             "exclude": [
                 "**/.git",
