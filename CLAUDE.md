@@ -8,10 +8,10 @@
 
 ```bash
 # 1. Lint and auto-fix
-ruff check locoder/ --fix
+ruff check locoder/ tests/ --fix
 
 # 2. Format check — flag diffs to the user, do NOT silently reformat
-ruff format --check locoder/
+ruff format --check locoder/ tests/
 
 # 3. Type check
 mypy locoder/
@@ -72,6 +72,12 @@ Check every item before finishing. Fail = do not proceed.
 | 5 | No unused imports | ruff `F401` |
 | 6 | No duplicated constants — import the source of truth, never redefine | Manual review |
 | 7 | `raise typer.Exit(N) from None` in all CLI except-blocks — no raw tracebacks to user | ruff `B904` |
+| 8 | No bare `dict` or `list` in variable annotations — always parameterize: `dict[str, Any]` | ruff `PYI001` / manual |
+| 9 | No `Any` for known types — use `Console \| None`, `TextEmbedding`, etc. under `TYPE_CHECKING` when the type comes from a lazy import | mypy |
+| 10 | ISP: functions accept only the data they need — never pass the full config blob to a function that uses one field; extract the value before calling | Manual review |
+| 11 | Shared cross-module string constants go in `locoder/constants.py` — never repeat a string in two files that cannot import each other | Manual review |
+| 12 | Test functions must have explicit return type annotations (`-> None`) and typed fixtures | mypy on `tests/` |
+| 13 | `pytest.raises(AttributeError)` not `pytest.raises(Exception)` — always use the specific exception | ruff `B017` |
 
 ---
 

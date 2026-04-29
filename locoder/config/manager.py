@@ -7,6 +7,7 @@ from typing import Any
 
 import tomli_w
 
+from locoder.constants import DEFAULT_EMBED_MODEL
 from locoder.hardware.detect import HardwareInfo
 
 # Project-local config (preferred) — gitignored, per-project settings
@@ -113,7 +114,7 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
             "allow_network": False,
         },
         "rag": {
-            "embeddings_model": "nomic-ai/nomic-embed-text-v1.5",
+            "embeddings_model": DEFAULT_EMBED_MODEL,
             "vector_store_dir": "~/.locoder/vectorstore",
             "exclude": [
                 "**/.git",

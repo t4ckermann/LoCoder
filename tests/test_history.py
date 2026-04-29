@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import json
+from pathlib import Path
+from typing import Any
+
+import pytest
 
 from locoder.agent.history import _MAX_TURNS, _SEED_TURNS, clear, load, recent_summaries, save
 
 
-def _msgs(task: str) -> list[dict]:
+def _msgs(task: str) -> list[dict[str, Any]]:
     return [
         {"role": "system", "content": "you are helpful"},
         {"role": "user", "content": task},
@@ -13,11 +16,11 @@ def _msgs(task: str) -> list[dict]:
     ]
 
 
-def test_load_empty(tmp_path):
+def test_load_empty(tmp_path: Path) -> None:
     assert load(tmp_path) == []
 
 
-def test_save_and_load_roundtrip(tmp_path, monkeypatch):
+def test_save_and_load_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("locoder.agent.history._HISTORY_DIR", tmp_path)
     msgs = _msgs("fix the bug")
     save(tmp_path, msgs)
@@ -25,7 +28,7 @@ def test_save_and_load_roundtrip(tmp_path, monkeypatch):
     assert loaded == msgs
 
 
-def test_load_seeds_last_n_turns(tmp_path, monkeypatch):
+def test_load_seeds_last_n_turns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("locoder.agent.history._HISTORY_DIR", tmp_path)
     for i in range(_SEED_TURNS + 5):
         save(tmp_path, _msgs(f"task {i}"))
@@ -34,23 +37,24 @@ def test_load_seeds_last_n_turns(tmp_path, monkeypatch):
     assert len(loaded) == _SEED_TURNS * 3
 
 
-def test_trim_to_max_turns(tmp_path, monkeypatch):
+def test_trim_to_max_turns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("locoder.agent.history._HISTORY_DIR", tmp_path)
     for i in range(_MAX_TURNS + 10):
         save(tmp_path, _msgs(f"task {i}"))
     from locoder.agent.history import _path
-    lines = [l for l in _path(tmp_path).read_text().splitlines() if l.strip()]
+
+    lines = [ln for ln in _path(tmp_path).read_text().splitlines() if ln.strip()]
     assert len(lines) == _MAX_TURNS
 
 
-def test_clear(tmp_path, monkeypatch):
+def test_clear(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("locoder.agent.history._HISTORY_DIR", tmp_path)
     save(tmp_path, _msgs("hello"))
     clear(tmp_path)
     assert load(tmp_path) == []
 
 
-def test_recent_summaries(tmp_path, monkeypatch):
+def test_recent_summaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("locoder.agent.history._HISTORY_DIR", tmp_path)
     for i in range(7):
         save(tmp_path, _msgs(f"task {i}"))
