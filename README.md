@@ -2,7 +2,15 @@
 
 Local-first coding agent powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud.
 
-> **Status:** Phase 4 complete. CLI, hardware detection, model management, server launcher, agent loop, and framework stack (LangGraph + OpenAI client + .gitignore-aware codebase search) are all working.
+> **Status:** Phase 4 complete — Phase 5 (memory & context) in progress. CLI, hardware detection, model management, server launcher, agent loop, and framework stack (LangGraph + OpenAI client + .gitignore-aware codebase search) are all working.
+
+---
+
+## How it works
+
+1. `locoder setup` detects your hardware and downloads a pre-built `llama-server` binary.
+2. `locoder pull <model>` downloads the right model quantization for your RAM.
+3. `locoder start` launches the local server and drops you into an interactive agent session — no internet required after that.
 
 ---
 
@@ -18,9 +26,39 @@ No GPU required. Apple Silicon unified memory counts as VRAM.
 
 ## Installation
 
+**macOS and Linux both require a virtual environment** — modern system Python (Homebrew, Ubuntu, etc.) blocks global `pip install` by default (PEP 668).
+
+### Option A — `uv` (recommended, fastest)
+
+[uv](https://github.com/astral-sh/uv) is a fast Python package manager that handles the venv automatically.
+
 ```bash
+# Install uv (once)
+curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
+
+# Install LoCoder
+uv pip install -e .
+```
+
+### Option B — standard virtualenv
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # macOS / Linux
+# .venv\Scripts\activate         # Windows
+
 pip install -e .
 ```
+
+After activation, `locoder` is on your PATH for the current shell session. Re-run `source .venv/bin/activate` in new terminals.
+
+### Option C — pipx (install as an app, no manual venv)
+
+```bash
+pipx install .
+```
+
+`pipx` manages its own isolated environment. Install it with `brew install pipx` (macOS) or `pip install --user pipx` (Linux).
 
 ---
 

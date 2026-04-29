@@ -22,7 +22,9 @@ pytest
 
 If dev tools are not installed:
 ```bash
+# Inside an active venv or with uv:
 pip install -e ".[dev]"
+# or: uv pip install -e ".[dev]"
 ```
 
 ---
