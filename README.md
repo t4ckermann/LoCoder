@@ -2,7 +2,7 @@
 
 Local-first coding agent powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud.
 
-> **Status:** Phase 2 complete. CLI, hardware detection, model management, and llama-server launcher are all working. The agent loop (Phase 3) is not yet built.
+> **Status:** Phase 3 complete. CLI, hardware detection, model management, server launcher, and agent loop are all working.
 
 ---
 
@@ -80,7 +80,31 @@ locoder registry list   # or: locoder registry ls
 Fetches the latest registry from GitHub and saves it to `~/.locoder/registry.json`.
 
 ### `locoder start`
-Starts the llama-server subprocess(es) and (eventually) the agent loop. Currently parks after server startup — the agent loop is Phase 3.
+Starts the llama-server subprocess(es) and the interactive agent loop. Type tasks at the `>` prompt; the agent clarifies assumptions, plans, executes tools, and verifies results.
+
+**Slash commands inside the session:**
+
+| Command | Effect |
+|---|---|
+| `/help` | Show available commands |
+| `/status` | Show current model, mode, and ports |
+| `Ctrl-C` | Stop servers and exit |
+
+**Agent config** (in `.locoder.toml`):
+
+```toml
+[agent]
+clarification_timeout = 10   # seconds shown in clarify prompt (informational)
+thinking_mode = true          # enable <|think|> prefix for Gemma 4 models
+```
+
+**Sandbox config** (controls `run_code` tool):
+
+```toml
+[sandbox]
+execution_timeout = 60    # seconds before subprocess is killed
+allow_network = false     # outbound network access during code execution
+```
 
 ---
 
@@ -163,5 +187,6 @@ locoder/
   hardware/   # CPU/RAM/VRAM detection, port allocation
   models/     # registry, downloader, quant selector, OpenAI-compat client
   server/     # llama-server install and launcher
+  agent/      # ReAct agent loop, tools, sandbox, LangGraph state machine
   data/       # bundled registry.json
 ```
