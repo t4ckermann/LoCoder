@@ -109,5 +109,23 @@
     "params_b": 13.0,
     "available_quants": ["q4_k_m", "q5_k_m"],
     "notes": "Instruction following only. Does not support native tool calling — requires GBNF grammar enforcement."
+  },
+  "qwen3-8b": {
+    "repo": "Qwen/Qwen3-8B-GGUF",
+    "default_quant": "q5_k_m",
+    "filename": "Qwen3-8B-{QUANT}.gguf",
+    "ram_tier": "8gb",
+    "params_b": 8.0,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "Qwen3 8B dense. Strong reasoning and coding. Native tool calling. Hybrid thinking mode (enable with thinking_mode = true)."
+  },
+  "qwen3-4b": {
+    "repo": "Qwen/Qwen3-4B-GGUF",
+    "default_quant": "q5_k_m",
+    "filename": "Qwen3-4B-{QUANT}.gguf",
+    "ram_tier": "4gb",
+    "params_b": 4.0,
+    "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
+    "notes": "Qwen3 4B dense. Good coding quality in the 4 GB RAM tier. Native tool calling. Hybrid thinking mode."
   }
 }

@@ -22,7 +22,24 @@ pytest
 
 If dev tools are not installed:
 ```bash
+# Inside an active venv or with uv:
 pip install -e ".[dev]"
+# or: uv pip install -e ".[dev]"
+```
+
+---
+
+## ⛔ MANDATORY: Bump version in pyproject.toml
+
+After every phase completion or any user-visible change (new feature, new command, new model, behaviour change, bug fix), increment the version in `pyproject.toml` before finishing:
+
+- **Phase completion** → bump minor: `0.4.0` → `0.5.0`
+- **Feature or fix within a phase** → bump patch: `0.5.0` → `0.5.1`
+- **Never leave the version the same** after delivering working changes to the user.
+
+```bash
+# Verify you actually changed it
+grep "^version" pyproject.toml
 ```
 
 ---
@@ -272,4 +289,25 @@ Cycles are forbidden. If you need to break a cycle, introduce a `Protocol` in th
 | 2 — Model strategy | ✅ Complete | Quant selector, HuggingFace downloader, model management commands, OpenAI-compat client |
 | 3 — Agent architecture | ✅ Complete | LangGraph ReAct loop (clarify → plan → verify), tool sandbox, interactive CLI |
 | 4 — Framework stack | ✅ Complete | Dependency set locked, `.gitignore`-aware `search_codebase` via `pathspec` |
-| 5 — Memory & context | 🔜 Next | ChromaDB RAG, `fastembed` embeddings, persistent conversation memory |
+| 5 — Memory & context | ✅ Complete | ChromaDB RAG, `fastembed` embeddings, persistent conversation history |
+| 6 — Single-server roles | ✅ Complete | Dropped hierarchical two-port mode; single server with `[PLANNER]`/`[EXECUTOR]` system-prompt prefixes; ChromaDB telemetry suppressed. |
+| 7 — Network serve mode | 📋 Planned | `locoder serve` (or `--host`/`--port` flags on `locoder start`) binds on a configurable address so the agent is reachable from any device on the local network. |
+
+### Design note — Phase 6: single-server role model
+
+**Problem with the current hierarchical two-port mode:**
+Running two separate `llama-server` processes simultaneously doubles RAM usage and adds operational complexity (two health checks, two ports, two model downloads) without a proportional benefit. `llama-server` does not support hot model swapping, so the only way to use two *different* models concurrently is two processes — but this is rarely worth the cost.
+
+**New approach:**
+- One `llama-server` process, one port, one model.
+- The agent graph serialises its phases: planner call → context accumulated in `messages` → executor call on the same endpoint with the full prior context prepended.
+- Role differentiation is achieved via distinct system-prompt sections (prefixed `[PLANNER]` / `[EXECUTOR]`) passed as the `system` message at each call, not via separate processes.
+- The existing `invoke_model` closure in `graph.py` is already the right abstraction point: Phase 6 replaces it with two closures (`invoke_planner`, `invoke_executor`) that hit the same client but inject different system prompts.
+- The `mode = "hierarchical"` config key and `start_server` multi-launch path are removed; `mode = "single"` becomes the only inference mode.
+
+**Cross-module impact:**
+- `server/launcher.py`: remove `hierarchical` branch from `start_server`; remove `planner_port` / `executor_port` from config schema.
+- `config/manager.py`: remove `[inference.hierarchical]` defaults.
+- `agent/graph.py`: split `invoke_model` into `invoke_planner` / `invoke_executor`; each injects a role-specific system-prompt prefix.
+- `cli/cmd_start.py` and `agent/loop.py`: update status display; no more multi-handle rendering.
+- `README.md`: remove the Inference modes section; document the single-server role model.

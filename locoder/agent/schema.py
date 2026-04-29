@@ -10,6 +10,7 @@ TOOL_NAMES: list[str] = [
     "run_code",
     "list_directory",
     "search_codebase",
+    "search_knowledge_base",
 ]
 
 # JSON Schema for clarification response.

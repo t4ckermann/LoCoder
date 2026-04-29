@@ -5,42 +5,44 @@ from typing import Any
 
 from rich.console import Console
 
+from locoder.agent import history, rag
 from locoder.agent.graph import run_agent
 from locoder.models.client import active_model_name, supports_thinking
 from locoder.server.launcher import ServerHandle
 
 _HELP_TEXT = """
 Available slash commands:
-  /help    — show this message
-  /status  — show model, mode, and thinking mode
-  /think   — toggle deep thinking mode on/off for the current session
-  /clear   — not yet supported (restart session to clear context)
-  Ctrl-C   — stop servers and exit
+  /help     — show this message
+  /status   — show model, mode, and thinking mode
+  /think    — toggle deep thinking mode on/off for the current session
+  /reindex  — re-index the workspace into the knowledge base
+  /history  — show the last 5 task summaries from this session
+  /clear    — clear persistent conversation history for this workspace
+  Ctrl-C    — stop servers and exit
 """.strip()
 
 
 def _print_status(
     config: dict[str, Any],
-    handles: list[ServerHandle],
+    handle: ServerHandle,
     console: Console,
     thinking_enabled: bool,
 ) -> None:
-    mode = config["inference"]["mode"]
-    console.print(f"[bold]Mode:[/bold] {mode}")
-    for h in handles:
-        console.print(f"[bold]{h.role}:[/bold] {active_model_name(config, h.role)}  port={h.port}")
+    console.print(f"[bold]Model:[/bold] {active_model_name(config)}  port={handle.port}")
     state = "[green]on[/green]" if thinking_enabled else "[dim]off[/dim]"
     console.print(f"[bold]Thinking:[/bold] {state}")
 
 
 def interactive_loop(
     config: dict[str, Any],
-    handles: list[ServerHandle],
+    handle: ServerHandle,
     workspace: Path,
     console: Console,
 ) -> None:
     """Read-eval-print loop: accept tasks, run the agent, repeat."""
     console.print("\n[bold green]LoCoder ready.[/bold green] Type a task or [dim]/help[/dim].\n")
+
+    rag.index_workspace(workspace, config, console)
 
     model = active_model_name(config)
     thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
@@ -59,7 +61,7 @@ def interactive_loop(
             continue
 
         if task == "/status":
-            _print_status(config, handles, console, thinking_enabled)
+            _print_status(config, handle, console, thinking_enabled)
             continue
 
         if task == "/think":
@@ -69,6 +71,24 @@ def interactive_loop(
                 thinking_enabled = not thinking_enabled
                 state = "[green]on[/green]" if thinking_enabled else "[dim]off[/dim]"
                 console.print(f"Thinking mode: {state}")
+            continue
+
+        if task == "/reindex":
+            rag.index_workspace(workspace, config, console)
+            continue
+
+        if task == "/history":
+            summaries = history.recent_summaries(workspace)
+            if summaries:
+                for i, s in enumerate(summaries, 1):
+                    console.print(f"  {i}. {s}")
+            else:
+                console.print("[dim]No history yet.[/dim]")
+            continue
+
+        if task == "/clear":
+            history.clear(workspace)
+            console.print("[dim]Conversation history cleared.[/dim]")
             continue
 
         if task.startswith("/"):

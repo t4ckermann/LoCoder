@@ -14,18 +14,12 @@ LOCAL_CONFIG_NAME = ".locoder.toml"
 # Global fallback — used when no local config exists
 GLOBAL_CONFIG_PATH = Path("~/.locoder/config.toml").expanduser()
 
-# Maps model_hint → executor registry short name
-# "large" now defaults to gemma4-e4b: faster than gemma4-26b at a fraction of the RAM.
-# For high-VRAM systems (>20 GB) that want maximum quality, swap to gemma4-26b manually.
+# Maps model_hint → registry short name
 _HINT_TO_MODEL: dict[str, str] = {
     "small": "qwen2.5-coder-1.5b",
     "mid": "qwen2.5-coder-7b",
     "large": "gemma4-e4b",
 }
-# Planner model — used only in hierarchical mode.
-# Gemma 4 models support thinking mode: set agent.thinking_mode = true in config
-# and Phase 3's agent loop will prepend <|think|> to the planner's system message.
-_PLANNER_MODEL = "gemma4-e4b"
 
 
 def config_path() -> Path:
@@ -66,23 +60,17 @@ def read_config() -> dict[str, Any]:
 
 
 def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
-    executor_model = _HINT_TO_MODEL.get(hw.model_hint, "qwen2.5-coder-7b")
+    model = _HINT_TO_MODEL.get(hw.model_hint, "qwen2.5-coder-7b")
     ngl = 9999 if hw.vram_gb is not None else 0
 
     config: dict[str, Any] = {
         "inference": {
             "llama_server_bin": llama_server_bin,
             "host": "127.0.0.1",
-            "mode": hw.mode,
+            "mode": "single",
             "single": {
-                "model": executor_model,
+                "model": model,
                 "port": hw.free_port_single,
-            },
-            "hierarchical": {
-                "planner_model": _PLANNER_MODEL,
-                "planner_port": hw.free_port_planner,
-                "executor_model": executor_model,
-                "executor_port": hw.free_port_executor,
             },
             "server_args": {
                 "threads": hw.cpu_cores,
@@ -92,14 +80,6 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
                 "flash_attn": "on",
                 "parallel": 4,
                 "ngl": ngl,
-                "planner": {
-                    "ctx_size": 16384,
-                    "parallel": 2,
-                },
-                "executor": {
-                    "ctx_size": 32768,
-                    "parallel": 4,
-                },
             },
         },
         "models": {
@@ -116,7 +96,7 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
             "allow_network": False,
         },
         "rag": {
-            "embeddings_model": "nomic-embed-text",
+            "embeddings_model": "nomic-ai/nomic-embed-text-v1.5",
             "vector_store_dir": "~/.locoder/vectorstore",
             "exclude": [
                 "**/.git",

@@ -25,9 +25,6 @@ def test_hardware_info_is_frozen() -> None:
         ram_gb=16.0,
         vram_gb=None,
         free_port_single=8080,
-        free_port_planner=8081,
-        free_port_executor=8082,
-        mode="single",
         model_hint="mid",
     )
     with pytest.raises(Exception):
@@ -40,11 +37,8 @@ def test_hardware_info_fields() -> None:
         ram_gb=32.0,
         vram_gb=24.0,
         free_port_single=8080,
-        free_port_planner=8081,
-        free_port_executor=8082,
-        mode="hierarchical",
         model_hint="large",
     )
     assert hw.cpu_cores == 8
-    assert hw.mode == "hierarchical"
+    assert hw.model_hint == "large"
     assert hw.vram_gb == 24.0

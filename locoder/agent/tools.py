@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pathspec
 
@@ -63,7 +64,7 @@ def search_codebase(query: str, path: str, workspace: Path) -> str:
         return f"Error: {exc}"
 
     gitignore = workspace / ".gitignore"
-    spec: pathspec.PathSpec[pathspec.Pattern] | None = None
+    spec: pathspec.PathSpec | None = None
     if gitignore.is_file():
         try:
             patterns = gitignore.read_text(errors="replace").splitlines()
@@ -95,6 +96,8 @@ def search_codebase(query: str, path: str, workspace: Path) -> str:
     return "\n".join(lines) if lines else f"No matches for {query!r}"
 
 
-def search_knowledge_base(query: str) -> str:
-    """Stub — RAG vector store not yet implemented (Phase 5)."""
-    return "(knowledge base not yet available)"
+def search_knowledge_base(query: str, workspace: Path, config: dict[str, Any]) -> str:
+    """Semantic search over the indexed codebase using ChromaDB + fastembed."""
+    from locoder.agent import rag
+
+    return rag.search(query, config, workspace)

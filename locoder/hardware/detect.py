@@ -14,9 +14,6 @@ class HardwareInfo:
     ram_gb: float
     vram_gb: float | None  # None = no discrete GPU detected
     free_port_single: int
-    free_port_planner: int
-    free_port_executor: int
-    mode: Literal["single", "hierarchical"]
     model_hint: Literal["small", "mid", "large"]
 
 
@@ -87,32 +84,16 @@ def detect() -> HardwareInfo:
     effective_gb = max(ram, vram) if vram is not None else ram
 
     if effective_gb < 10:
-        mode: Literal["single", "hierarchical"] = "single"
         model_hint: Literal["small", "mid", "large"] = "small"
     elif effective_gb <= 20:
-        mode = "single"
         model_hint = "mid"
     else:
-        mode = "hierarchical"
         model_hint = "large"
-
-    port_single = find_free_port(8080)
-    port_planner = find_free_port(8081)
-    port_executor = find_free_port(8082)
-
-    # Ensure no two ports collide when defaults overlap
-    if port_planner == port_single:
-        port_planner = find_free_port(port_single + 1)
-    if port_executor in (port_single, port_planner):
-        port_executor = find_free_port(max(port_single, port_planner) + 1)
 
     return HardwareInfo(
         cpu_cores=cores,
         ram_gb=round(ram, 1),
         vram_gb=round(vram, 1) if vram is not None else None,
-        free_port_single=port_single,
-        free_port_planner=port_planner,
-        free_port_executor=port_executor,
-        mode=mode,
+        free_port_single=find_free_port(8080),
         model_hint=model_hint,
     )

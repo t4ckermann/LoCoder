@@ -106,44 +106,16 @@ def _launch_one(
     return ServerHandle(proc=proc, port=port, model_path=model_path, role=role)
 
 
-def start_server(mode: str, config: dict[str, Any]) -> list[ServerHandle]:
+def start_server(config: dict[str, Any]) -> ServerHandle:
     inf = config["inference"]
     bin_path: str = inf["llama_server_bin"]
-    shared_args: dict[str, Any] = dict(inf.get("server_args", {}))
-    # Remove sub-tables before passing as flat args
-    shared_args.pop("planner", None)
-    shared_args.pop("executor", None)
-
-    handles: list[ServerHandle] = []
-
-    if mode == "single":
-        model_name: str = inf["single"]["model"]
-        port: int = inf["single"]["port"]
-        gguf = _resolve_gguf(model_name)
-        handles.append(_launch_one(bin_path, gguf, port, shared_args, "single"))
-
-    elif mode == "hierarchical":
-        planner_name: str = inf["hierarchical"]["planner_model"]
-        planner_port: int = inf["hierarchical"]["planner_port"]
-        executor_name: str = inf["hierarchical"]["executor_model"]
-        executor_port: int = inf["hierarchical"]["executor_port"]
-
-        planner_args = {**shared_args, **inf.get("server_args", {}).get("planner", {})}
-        executor_args = {**shared_args, **inf.get("server_args", {}).get("executor", {})}
-
-        planner_gguf = _resolve_gguf(planner_name)
-        executor_gguf = _resolve_gguf(executor_name)
-
-        handles.append(_launch_one(bin_path, planner_gguf, planner_port, planner_args, "planner"))
-        handles.append(
-            _launch_one(bin_path, executor_gguf, executor_port, executor_args, "executor")
-        )
-
-    else:
-        raise ValueError(f"Unknown inference mode: {mode!r}")
-
-    atexit.register(stop_servers, handles)
-    return handles
+    server_args: dict[str, Any] = dict(inf.get("server_args", {}))
+    model_name: str = inf["single"]["model"]
+    port: int = inf["single"]["port"]
+    gguf = _resolve_gguf(model_name)
+    handle = _launch_one(bin_path, gguf, port, server_args, "single")
+    atexit.register(stop_server, handle)
+    return handle
 
 
 def _resolve_gguf(model_name: str) -> Path:
@@ -157,10 +129,9 @@ def _resolve_gguf(model_name: str) -> Path:
     return ggufs[0]
 
 
-def stop_servers(handles: list[ServerHandle]) -> None:
-    for handle in handles:
-        try:
-            handle.proc.terminate()
-            handle.proc.wait(timeout=5)
-        except Exception:
-            pass
+def stop_server(handle: ServerHandle) -> None:
+    try:
+        handle.proc.terminate()
+        handle.proc.wait(timeout=5)
+    except Exception:
+        pass

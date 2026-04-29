@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import urllib.request
 from pathlib import Path
+from urllib.error import HTTPError
 
 from huggingface_hub import hf_hub_url
 from rich.progress import (
@@ -60,6 +61,17 @@ def download(name: str, quant: str | None = None, available_gb: float | None = N
         return dest_path
 
     url = hf_hub_url(repo_id=repo_id, filename=filename)
+
+    # Pre-flight: HEAD request to catch wrong repo/filename before starting the download.
+    # HuggingFace returns 401 or 404 for missing files — surface a clear message either way.
+    head = urllib.request.Request(url, headers={"User-Agent": "locoder"}, method="HEAD")
+    try:
+        urllib.request.urlopen(head, timeout=15)
+    except HTTPError as exc:
+        raise ValueError(
+            f"File '{filename}' not found in repo '{repo_id}' (HTTP {exc.code}). "
+            "The registry entry may be outdated — run `locoder registry update` to refresh."
+        ) from None
 
     req = urllib.request.Request(url, headers={"User-Agent": "locoder"})
 
