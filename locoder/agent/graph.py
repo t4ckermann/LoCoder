@@ -118,11 +118,15 @@ def make_graph(
     config: dict[str, Any],
     workspace: Path,
     console: Console,
+    thinking_mode: bool | None = None,
 ) -> Any:
     """Build and compile the agent LangGraph state machine."""
     client = get_sync_client(config)
     model = active_model_name(config)
-    thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
+    if thinking_mode is None:
+        thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
+    else:
+        thinking_enabled = thinking_mode
     t_prefix = thinking_prefix(model, thinking_enabled)
     system_prompt = prompts.build_system_prompt(workspace, t_prefix)
 
@@ -232,9 +236,10 @@ def run_agent(
     config: dict[str, Any],
     workspace: Path,
     console: Console,
+    thinking_mode: bool | None = None,
 ) -> None:
     """Run the agent graph for a single user task."""
-    app = make_graph(config, workspace, console)
+    app = make_graph(config, workspace, console, thinking_mode)
     initial: AgentState = {
         "messages": [],
         "task": task,
