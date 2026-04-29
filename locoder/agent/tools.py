@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pathspec
+
 
 def _validated(path: str, workspace: Path) -> Path:
     """Resolve *path* within *workspace*; raise ValueError if it escapes."""
@@ -60,16 +62,27 @@ def search_codebase(query: str, path: str, workspace: Path) -> str:
     except ValueError as exc:
         return f"Error: {exc}"
 
+    gitignore = workspace / ".gitignore"
+    spec: pathspec.PathSpec[pathspec.Pattern] | None = None
+    if gitignore.is_file():
+        try:
+            patterns = gitignore.read_text(errors="replace").splitlines()
+            spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+        except OSError:
+            pass
+
     lines: list[str] = []
     try:
         for file_path in sorted(root.rglob("*")):
             if not file_path.is_file():
                 continue
+            rel = str(file_path.relative_to(workspace))
+            if spec is not None and spec.match_file(rel):
+                continue
             try:
                 text = file_path.read_text(errors="replace")
             except OSError:
                 continue
-            rel = str(file_path.relative_to(workspace))
             for lineno, line in enumerate(text.splitlines(), 1):
                 if query.lower() in line.lower():
                     lines.append(f"{rel}:{lineno}: {line.rstrip()}")

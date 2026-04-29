@@ -231,7 +231,7 @@ Rules (in priority order):
 - `raise typer.Exit(1) from None` in CLI except-blocks — the `from None` suppresses chaining (ruff B904).
 - `BaseException` catch in `downloader.py` is intentional (partial-file cleanup on Ctrl-C) — leave it.
 - Bare `except Exception: pass` in `hardware/detect.py` is intentional (optional tools like `nvidia-smi`) — leave it.
-- `thinking_mode = true` in `.locoder.toml` is a Phase 3 flag only — the agent loop that reads it is not yet built. Do not wire it up until Phase 3.
+- `thinking_mode = true` in `.locoder.toml` enables the `<|think|>` prefix for Gemma 4 models (see `locoder/models/client.py:thinking_prefix`).
 
 ---
 
@@ -261,3 +261,15 @@ locoder/
 > plain `float` parameter — the `cli/` layer calls `hardware.detect.available_gb()` and passes it in.
 
 Cycles are forbidden. If you need to break a cycle, introduce a `Protocol` in the lower module and depend on that instead of the concrete upper module.
+
+---
+
+## Phase status
+
+| Phase | Status | What was delivered |
+|-------|--------|--------------------|
+| 1 — Infrastructure | ✅ Complete | CLI scaffold, hardware detection, model registry, server launcher |
+| 2 — Model strategy | ✅ Complete | Quant selector, HuggingFace downloader, model management commands, OpenAI-compat client |
+| 3 — Agent architecture | ✅ Complete | LangGraph ReAct loop (clarify → plan → verify), tool sandbox, interactive CLI |
+| 4 — Framework stack | ✅ Complete | Dependency set locked, `.gitignore`-aware `search_codebase` via `pathspec` |
+| 5 — Memory & context | 🔜 Next | ChromaDB RAG, `fastembed` embeddings, persistent conversation memory |

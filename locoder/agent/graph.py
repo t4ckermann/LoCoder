@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,6 +30,8 @@ class AgentState(TypedDict):
     written_files: list[str]
     done: bool
     answer: str
+    pending_tool: dict[str, Any]  # {"tool": str, "arguments": dict} when a call is pending
+    last_observation: str  # output from the last tool dispatch
 
 
 def _call_llm(
@@ -118,13 +121,23 @@ def make_graph(
     config: dict[str, Any],
     workspace: Path,
     console: Console,
+    thinking_mode: bool | None = None,
 ) -> Any:
     """Build and compile the agent LangGraph state machine."""
     client = get_sync_client(config)
     model = active_model_name(config)
-    thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
+    if thinking_mode is None:
+        thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
+    else:
+        thinking_enabled = thinking_mode
     t_prefix = thinking_prefix(model, thinking_enabled)
     system_prompt = prompts.build_system_prompt(workspace, t_prefix)
+
+    # Single abstraction point for model calls. In Phase 9, make_graph will receive
+    # role-specific invoke_model functions (planner vs executor) and hand them to
+    # different nodes — adding nodes/edges rather than rewriting this function.
+    def invoke_model(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        return _call_llm(client, model, messages)
 
     # --- clarify node ---
     def clarify_node(state: AgentState) -> AgentState:
@@ -132,7 +145,7 @@ def make_graph(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompts.build_clarify_prompt(state["task"])},
         ]
-        data = _call_llm(client, model, clarify_messages)
+        data = invoke_model(clarify_messages)
         assumptions: list[str] = data.get("assumptions", [])
 
         if assumptions:
@@ -150,7 +163,6 @@ def make_graph(
             task = f"{task}\n\nCorrection from user: {correction}"
             console.print("[dim]Task updated with your correction.[/dim]")
 
-        # Seed the conversation history used by plan_node
         seed_messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
@@ -164,29 +176,42 @@ def make_graph(
             return {**state, "done": True, "answer": "Stopped: maximum iterations reached."}
 
         console.print(f"[dim][plan] thinking... (step {state['iterations'] + 1})[/dim]")
-        data = _call_llm(client, model, state["messages"])
+        data = invoke_model(state["messages"])
         step = parse_plan(data)
 
         if isinstance(step, Answer):
             return {**state, "done": True, "answer": step.content}
 
-        # It's a ToolCall — add assistant's intent to messages
-        console.print(f"[bold blue][act][/bold blue]  {step.tool}({_fmt_args(step.arguments)})")
+        return {**state, "pending_tool": {"tool": step.tool, "arguments": step.arguments}}
+
+    # --- act node ---
+    def act_node(state: AgentState) -> AgentState:
+        tool_name = state["pending_tool"]["tool"]
+        arguments = dict(state["pending_tool"].get("arguments") or {})
+        call = ToolCall(tool=tool_name, arguments=arguments)
+        console.print(f"[bold blue][act][/bold blue]  {call.tool}({_fmt_args(call.arguments)})")
+        result = _dispatch(call, workspace, config)
+        return {**state, "last_observation": result}
+
+    # --- observe node ---
+    def observe_node(state: AgentState) -> AgentState:
+        tool_name = state["pending_tool"]["tool"]
+        arguments = dict(state["pending_tool"].get("arguments") or {})
+
         assistant_msg: dict[str, Any] = {
             "role": "assistant",
             "content": json.dumps(
-                {"action": "tool_call", "tool": step.tool, "arguments": step.arguments}
+                {"action": "tool_call", "tool": tool_name, "arguments": arguments}
             ),
         }
-        result = _dispatch(step, workspace, config)
         tool_msg: dict[str, Any] = {
             "role": "user",
-            "content": f"[Tool result: {step.tool}]\n{result}",
+            "content": f"[Tool result: {tool_name}]\n{state['last_observation']}",
         }
 
         written = list(state["written_files"])
-        if step.tool == "write_file":
-            path = str(step.arguments.get("path", ""))
+        if tool_name == "write_file":
+            path = str(arguments.get("path", ""))
             if path and path not in written:
                 written.append(path)
 
@@ -195,7 +220,8 @@ def make_graph(
             "messages": [*state["messages"], assistant_msg, tool_msg],
             "iterations": state["iterations"] + 1,
             "written_files": written,
-            "done": False,
+            "pending_tool": {},
+            "last_observation": "",
         }
 
     # --- verify node ---
@@ -204,16 +230,20 @@ def make_graph(
             _verify_written_files(state["written_files"], workspace, console)
         return state
 
-    def _route(state: AgentState) -> str:
-        return "verify" if state["done"] else "plan"
+    def _route_plan(state: AgentState) -> str:
+        return "verify" if state["done"] else "act"
 
     graph: StateGraph[AgentState] = StateGraph(AgentState)
     graph.add_node("clarify", clarify_node)
     graph.add_node("plan", plan_node)
+    graph.add_node("act", act_node)
+    graph.add_node("observe", observe_node)
     graph.add_node("verify", verify_node)
     graph.set_entry_point("clarify")
     graph.add_edge("clarify", "plan")
-    graph.add_conditional_edges("plan", _route, {"plan": "plan", "verify": "verify"})
+    graph.add_conditional_edges("plan", _route_plan, {"act": "act", "verify": "verify"})
+    graph.add_edge("act", "observe")
+    graph.add_edge("observe", "plan")
     graph.add_edge("verify", END)
     return graph.compile()
 
@@ -227,14 +257,19 @@ def _fmt_args(args: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
+# Exported type for callers that want to inject a custom model function (Phase 9).
+InvokeModel = Callable[[list[dict[str, Any]]], dict[str, Any]]
+
+
 def run_agent(
     task: str,
     config: dict[str, Any],
     workspace: Path,
     console: Console,
+    thinking_mode: bool | None = None,
 ) -> None:
     """Run the agent graph for a single user task."""
-    app = make_graph(config, workspace, console)
+    app = make_graph(config, workspace, console, thinking_mode)
     initial: AgentState = {
         "messages": [],
         "task": task,
@@ -242,6 +277,8 @@ def run_agent(
         "written_files": [],
         "done": False,
         "answer": "",
+        "pending_tool": {},
+        "last_observation": "",
     }
     final: AgentState = app.invoke(initial)
     if final.get("answer"):
