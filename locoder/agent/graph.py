@@ -133,21 +133,27 @@ def make_graph(
     else:
         thinking_enabled = thinking_mode
     t_prefix = thinking_prefix(model, thinking_enabled)
-    system_prompt = prompts.build_system_prompt(workspace, t_prefix)
+    base_prompt = prompts.build_system_prompt(workspace, t_prefix)
+    planner_system = "[PLANNER]\n" + base_prompt
+    executor_system = "[EXECUTOR]\n" + base_prompt
 
-    # Single abstraction point for model calls. In Phase 9, make_graph will receive
-    # role-specific invoke_model functions (planner vs executor) and hand them to
-    # different nodes — adding nodes/edges rather than rewriting this function.
-    def invoke_model(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(client, model, messages)
+    def _with_system(msgs: list[dict[str, Any]], system: str) -> list[dict[str, Any]]:
+        if msgs and msgs[0].get("role") == "system":
+            return [{"role": "system", "content": system}, *msgs[1:]]
+        return [{"role": "system", "content": system}, *msgs]
+
+    def invoke_planner(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        return _call_llm(client, model, _with_system(messages, planner_system))
+
+    def invoke_executor(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        return _call_llm(client, model, _with_system(messages, executor_system))
 
     # --- clarify node ---
     def clarify_node(state: AgentState) -> AgentState:
         clarify_messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompts.build_clarify_prompt(state["task"])},
         ]
-        data = invoke_model(clarify_messages)
+        data = invoke_planner(clarify_messages)
         assumptions: list[str] = data.get("assumptions", [])
 
         if assumptions:
@@ -166,7 +172,6 @@ def make_graph(
             console.print("[dim]Task updated with your correction.[/dim]")
 
         seed_messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
             {"role": "user", "content": task},
         ]
         return {**state, "task": task, "messages": seed_messages}
@@ -178,7 +183,7 @@ def make_graph(
             return {**state, "done": True, "answer": "Stopped: maximum iterations reached."}
 
         console.print(f"[dim][plan] thinking... (step {state['iterations'] + 1})[/dim]")
-        data = invoke_model(state["messages"])
+        data = invoke_executor(state["messages"])
         step = parse_plan(data)
 
         if isinstance(step, Answer):

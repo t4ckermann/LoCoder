@@ -290,7 +290,7 @@ Cycles are forbidden. If you need to break a cycle, introduce a `Protocol` in th
 | 3 — Agent architecture | ✅ Complete | LangGraph ReAct loop (clarify → plan → verify), tool sandbox, interactive CLI |
 | 4 — Framework stack | ✅ Complete | Dependency set locked, `.gitignore`-aware `search_codebase` via `pathspec` |
 | 5 — Memory & context | ✅ Complete | ChromaDB RAG, `fastembed` embeddings, persistent conversation history |
-| 6 — Single-server roles | 🔜 Next | Drop two-port hierarchical mode; planner and executor roles share one server via serialized calls and context passing in the message history. See design note below. |
+| 6 — Single-server roles | ✅ Complete | Dropped hierarchical two-port mode; single server with `[PLANNER]`/`[EXECUTOR]` system-prompt prefixes; ChromaDB telemetry suppressed. |
 | 7 — Network serve mode | 📋 Planned | `locoder serve` (or `--host`/`--port` flags on `locoder start`) binds on a configurable address so the agent is reachable from any device on the local network. |
 
 ### Design note — Phase 6: single-server role model

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import logging
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -14,6 +16,29 @@ if TYPE_CHECKING:
 
 _MAX_FILES_WARN = 5_000
 _EMBED_MODEL = "nomic-ai/nomic-embed-text-v1.5"
+
+# Suppress chromadb telemetry. Must be set before `import chromadb` (which is a lazy import
+# inside functions below). posthog v7 also changed capture() to 1-arg; chromadb calls the old
+# 3-arg form and logs the resulting TypeError as an error — silence that logger too.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
+
+# Directories that are almost never worth indexing; merged with user-configured excludes.
+_DEFAULT_EXCLUDES: list[str] = [
+    "**/.git/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/env/**",
+    "**/__pycache__/**",
+    "**/*.egg-info/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.tox/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**",
+    "**/.pytest_cache/**",
+]
 
 
 def _fastembed_cache_dir() -> Path:
@@ -38,10 +63,9 @@ def _collect_files(workspace: Path, config: dict[str, Any]) -> list[Path]:
                 "gitwildmatch", gitignore.read_text(errors="replace").splitlines()
             )
 
-    exclude_patterns: list[str] = config.get("rag", {}).get("exclude", [])
-    exc_spec: pathspec.PathSpec | None = (
-        pathspec.PathSpec.from_lines("gitwildmatch", exclude_patterns) if exclude_patterns else None
-    )
+    user_excludes: list[str] = config.get("rag", {}).get("exclude", [])
+    all_excludes = _DEFAULT_EXCLUDES + user_excludes
+    exc_spec: pathspec.PathSpec | None = pathspec.PathSpec.from_lines("gitwildmatch", all_excludes)
 
     files: list[Path] = []
     for p in sorted(workspace.rglob("*")):

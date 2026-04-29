@@ -96,11 +96,8 @@ def setup() -> None:
         "VRAM",
         f"{hw.vram_gb:.1f} GB" if hw.vram_gb is not None else "None detected",
     )
-    table.add_row("Inference mode", hw.mode)
     table.add_row("Model hint", hw.model_hint)
-    table.add_row("Port (single)", str(hw.free_port_single))
-    table.add_row("Port (planner)", str(hw.free_port_planner))
-    table.add_row("Port (executor)", str(hw.free_port_executor))
+    table.add_row("Port", str(hw.free_port_single))
     console.print(table)
 
     bin_path = _resolve_llama_server()
@@ -109,7 +106,6 @@ def setup() -> None:
     write_config(hw, bin_path)
 
     console.print("\n[bold green]Setup complete.[/bold green]")
-    console.print(f"  Mode        : {hw.mode}")
     console.print(f"  llama-server: {bin_path}")
     console.print("  Models dir  : ~/.locoder/models/  [dim](global)[/dim]")
     console.print(f"  Config      : {default_write_path()}  [dim](project-local, gitignored)[/dim]")

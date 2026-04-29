@@ -24,21 +24,18 @@ Available slash commands:
 
 def _print_status(
     config: dict[str, Any],
-    handles: list[ServerHandle],
+    handle: ServerHandle,
     console: Console,
     thinking_enabled: bool,
 ) -> None:
-    mode = config["inference"]["mode"]
-    console.print(f"[bold]Mode:[/bold] {mode}")
-    for h in handles:
-        console.print(f"[bold]{h.role}:[/bold] {active_model_name(config, h.role)}  port={h.port}")
+    console.print(f"[bold]Model:[/bold] {active_model_name(config)}  port={handle.port}")
     state = "[green]on[/green]" if thinking_enabled else "[dim]off[/dim]"
     console.print(f"[bold]Thinking:[/bold] {state}")
 
 
 def interactive_loop(
     config: dict[str, Any],
-    handles: list[ServerHandle],
+    handle: ServerHandle,
     workspace: Path,
     console: Console,
 ) -> None:
@@ -64,7 +61,7 @@ def interactive_loop(
             continue
 
         if task == "/status":
-            _print_status(config, handles, console, thinking_enabled)
+            _print_status(config, handle, console, thinking_enabled)
             continue
 
         if task == "/think":
