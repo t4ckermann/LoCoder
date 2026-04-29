@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import time
+from pathlib import Path
 from typing import Any
 
 import typer
 from rich.console import Console
 
+from locoder.agent.loop import interactive_loop
 from locoder.config.manager import read_config
 from locoder.hardware.detect import available_gb as _available_gb
 from locoder.models.downloader import download, is_installed
@@ -69,12 +70,12 @@ def start() -> None:
             f"http://127.0.0.1:{handle.port}[/bold green]"
         )
 
-    # TODO: launch agent loop (Phase 3)
-    console.print("[dim]Agent loop not yet implemented. Press Ctrl-C to stop servers.[/dim]")
+    workspace = Path.cwd()
 
     try:
-        while True:
-            time.sleep(1)
+        interactive_loop(config, handles, workspace, console)
     except KeyboardInterrupt:
+        pass
+    finally:
         console.print("\n[yellow]Shutting down...[/yellow]")
         stop_servers(handles)

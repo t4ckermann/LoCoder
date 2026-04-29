@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 
 # Models that support Gemma 4 thinking mode via <|think|> prefix
 _THINKING_MODELS = frozenset({"gemma4-e2b", "gemma4-e4b", "gemma4-26b", "gemma4-31b"})
@@ -28,6 +28,27 @@ def get_client(config: dict[str, Any], role: str = "single") -> AsyncOpenAI:
         raise ValueError(f"Unknown role: {role!r}. Expected 'single', 'planner', or 'executor'.")
 
     return AsyncOpenAI(
+        base_url=f"http://{host}:{port}/v1",
+        api_key="not-needed",
+    )
+
+
+def get_sync_client(config: dict[str, Any], role: str = "single") -> OpenAI:
+    """Return a synchronous OpenAI-compatible client pointed at the local llama-server."""
+    inf = config["inference"]
+    mode: str = inf["mode"]
+    host: str = inf.get("host", "127.0.0.1")
+
+    if mode == "single" or role == "single":
+        port: int = inf["single"]["port"]
+    elif role == "planner":
+        port = inf["hierarchical"]["planner_port"]
+    elif role == "executor":
+        port = inf["hierarchical"]["executor_port"]
+    else:
+        raise ValueError(f"Unknown role: {role!r}. Expected 'single', 'planner', or 'executor'.")
+
+    return OpenAI(
         base_url=f"http://{host}:{port}/v1",
         api_key="not-needed",
     )
