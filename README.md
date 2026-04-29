@@ -2,7 +2,7 @@
 
 Local-first coding agent powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud.
 
-> **Status:** Phase 3 complete. CLI, hardware detection, model management, server launcher, and agent loop are all working.
+> **Status:** Phase 4 complete. CLI, hardware detection, model management, server launcher, agent loop, and framework stack (LangGraph + OpenAI client + .gitignore-aware codebase search) are all working.
 
 ---
 
@@ -87,7 +87,8 @@ Starts the llama-server subprocess(es) and the interactive agent loop. Type task
 | Command | Effect |
 |---|---|
 | `/help` | Show available commands |
-| `/status` | Show current model, mode, and ports |
+| `/status` | Show current model, mode, ports, and thinking mode |
+| `/think` | Toggle deep thinking mode on/off for the current session |
 | `Ctrl-C` | Stop servers and exit |
 
 **Agent config** (in `.locoder.toml`):
