@@ -75,7 +75,16 @@ def _parallel_slots(cores: int, has_gpu: bool) -> int:
     return 4
 
 
-def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
+def write_config(
+    hw: HardwareInfo,
+    llama_server_bin: str,
+    *,
+    lint: bool = True,
+    type_check: bool = True,
+    tests: bool = False,
+    test_command: str = "pytest",
+    manual: bool = False,
+) -> None:
     model = _HINT_TO_MODEL.get(hw.model_hint, "qwen2.5-coder-7b")
     ngl = 9999 if hw.vram_gb is not None else 0
     ctx_size = _CTX_SIZE[hw.model_hint]
@@ -126,6 +135,13 @@ def write_config(hw: HardwareInfo, llama_server_bin: str) -> None:
             "chunk_size": 512,
             "chunk_overlap": 64,
             "top_k": 5,
+        },
+        "verify": {
+            "lint": lint,
+            "type_check": type_check,
+            "tests": tests,
+            "test_command": test_command,
+            "manual": manual,
         },
     }
 

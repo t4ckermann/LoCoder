@@ -103,7 +103,25 @@ def setup() -> None:
     bin_path = _resolve_llama_server()
     _verify_binary(bin_path)
 
-    write_config(hw, bin_path)
+    console.print(
+        "\n[bold]Verification settings[/bold] [dim](applied after each agent task):[/dim]"
+    )
+    run_checks = typer.confirm("  Run code quality checks (ruff + mypy)?", default=True)
+    run_tests = typer.confirm("  Run tests?", default=False)
+    test_cmd = "pytest"
+    if run_tests:
+        test_cmd = typer.prompt("  Test command", default="pytest")
+    manual_review = typer.confirm("  Pause for manual review after each task?", default=False)
+
+    write_config(
+        hw,
+        bin_path,
+        lint=run_checks,
+        type_check=run_checks,
+        tests=run_tests,
+        test_command=test_cmd,
+        manual=manual_review,
+    )
 
     console.print("\n[bold green]Setup complete.[/bold green]")
     console.print(f"  llama-server: {bin_path}")

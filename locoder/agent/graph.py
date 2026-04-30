@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import shlex
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -91,33 +93,60 @@ def _dispatch(
     return f"Unknown tool: {name!r}"
 
 
-def _verify_written_files(written: list[str], workspace: Path, console: Console) -> None:
-    """Run ruff + mypy on any Python files written during the agent run."""
-    py_files = [f for f in written if f.endswith(".py")]
-    if not py_files:
+def _verify_written_files(
+    written: list[str],
+    workspace: Path,
+    console: Console,
+    verify_config: dict[str, Any],
+) -> None:
+    """Run configured checks on files written during the agent run."""
+    if not written:
         return
 
-    abs_files = [str(workspace / f) for f in py_files]
+    py_files = [f for f in written if f.endswith(".py")]
+    abs_py_files = [str(workspace / f) for f in py_files]
 
-    console.print("[dim][verify] ruff check...[/dim]")
-    r = subprocess.run(
-        ["ruff", "check", "--fix", *abs_files],
-        capture_output=True,
-        cwd=str(workspace),
-    )
-    if r.returncode != 0:
-        out = r.stdout.decode(errors="replace")
-        console.print(f"[yellow][verify] ruff issues:\n{out}[/yellow]")
+    if abs_py_files and verify_config.get("lint", True):
+        console.print("[dim][verify] ruff check...[/dim]")
+        r = subprocess.run(
+            ["ruff", "check", "--fix", *abs_py_files],
+            capture_output=True,
+            cwd=str(workspace),
+        )
+        if r.returncode != 0:
+            issues = r.stdout.decode(errors="replace")
+            console.print(f"[yellow][verify] ruff issues:\n{issues}[/yellow]")
 
-    console.print("[dim][verify] mypy...[/dim]")
-    r = subprocess.run(
-        ["mypy", *abs_files],
-        capture_output=True,
-        cwd=str(workspace),
-    )
-    if r.returncode != 0:
-        out = r.stdout.decode(errors="replace")
-        console.print(f"[yellow][verify] mypy issues:\n{out}[/yellow]")
+    if abs_py_files and verify_config.get("type_check", True):
+        console.print("[dim][verify] mypy...[/dim]")
+        r = subprocess.run(
+            ["mypy", *abs_py_files],
+            capture_output=True,
+            cwd=str(workspace),
+        )
+        if r.returncode != 0:
+            issues = r.stdout.decode(errors="replace")
+            console.print(f"[yellow][verify] mypy issues:\n{issues}[/yellow]")
+
+    if verify_config.get("tests", False):
+        test_cmd_str = str(verify_config.get("test_command", "pytest"))
+        console.print(f"[dim][verify] {test_cmd_str}...[/dim]")
+        r = subprocess.run(
+            shlex.split(test_cmd_str),
+            capture_output=True,
+            cwd=str(workspace),
+        )
+        if r.returncode != 0:
+            out = (r.stdout + r.stderr).decode(errors="replace")
+            console.print(f"[yellow][verify] test failures:\n{out}[/yellow]")
+        else:
+            console.print("[green][verify] all tests passed[/green]")
+
+    if verify_config.get("manual", False):
+        console.print("\n[bold yellow][verify] Manual review requested.[/bold yellow]")
+        console.print("[dim]Review the changes above, then press Enter to continue...[/dim]")
+        with contextlib.suppress(EOFError):
+            input()
 
 
 def make_graph(
@@ -137,6 +166,7 @@ def make_graph(
     base_prompt = prompts.build_system_prompt(workspace, t_prefix)
     planner_system = "[PLANNER]\n" + base_prompt
     executor_system = "[EXECUTOR]\n" + base_prompt
+    verify_config: dict[str, Any] = config.get("verify", {})
 
     def _with_system(msgs: list[dict[str, Any]], system: str) -> list[dict[str, Any]]:
         if msgs and msgs[0].get("role") == "system":
@@ -235,7 +265,7 @@ def make_graph(
     # --- verify node ---
     def verify_node(state: AgentState) -> AgentState:
         if state["written_files"]:
-            _verify_written_files(state["written_files"], workspace, console)
+            _verify_written_files(state["written_files"], workspace, console, verify_config)
         return state
 
     def _route_plan(state: AgentState) -> str:

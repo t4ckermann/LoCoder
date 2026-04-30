@@ -2,7 +2,7 @@
 
 Local-first coding agent powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud.
 
-> **Status:** Phase 6 complete. Single-server role model, RAG knowledge base (ChromaDB + fastembed), and persistent conversation history are all working.
+> **Status:** Phase 7 complete. Post-change verification (ruff, mypy, pytest, manual) runs automatically after the agent writes files; preferences are set per-project via `locoder setup`. `--host`/`--port` flags also added.
 
 ---
 
@@ -74,8 +74,11 @@ Lists all registry models with RAM tier, params, and install status.
 ### `locoder registry update`
 Fetches the latest registry from GitHub.
 
-### `locoder start`
+### `locoder start [--host HOST] [--port PORT]`
 Starts the llama-server and drops into the interactive agent loop.
+
+- `--host 0.0.0.0` exposes the server on all network interfaces (LAN access). Defaults to `127.0.0.1`.
+- `--port 9090` overrides the configured port. Both flags patch the in-memory config so the agent client connects to the correct address.
 
 **Session commands:**
 
@@ -159,6 +162,14 @@ exclude = ["**/.git", "**/node_modules", "**/__pycache__"]
 [sandbox]
 execution_timeout = 60
 allow_network = false
+
+# Per-project verification — what the agent runs after writing files
+[verify]
+lint = true          # ruff check + auto-fix on written .py files
+type_check = true    # mypy on written .py files
+tests = false        # run test_command after each task
+test_command = "pytest"
+manual = false       # pause and wait for Enter before continuing
 ```
 
 ---
