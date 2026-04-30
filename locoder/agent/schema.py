@@ -51,6 +51,13 @@ class Answer:
     content: str
 
 
+@dataclass(frozen=True)
+class Review:
+    verdict: str  # "approved" | "revise"
+    reason: str = ""
+    feedback: str = ""
+
+
 def parse_plan(data: dict[str, Any]) -> ToolCall | Answer:
     """Parse a model response dict into a ToolCall or Answer."""
     if data.get("action") == "answer":
@@ -58,4 +65,13 @@ def parse_plan(data: dict[str, Any]) -> ToolCall | Answer:
     return ToolCall(
         tool=str(data.get("tool", "")),
         arguments=dict(data.get("arguments") or {}),
+    )
+
+
+def parse_review(data: dict[str, Any]) -> Review:
+    """Parse a model response dict into a Review. Defaults to approved on missing/invalid data."""
+    return Review(
+        verdict=str(data.get("verdict", "approved")),
+        reason=str(data.get("reason", "")),
+        feedback=str(data.get("feedback", "")),
     )

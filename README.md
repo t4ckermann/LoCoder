@@ -2,7 +2,7 @@
 
 Local-first coding agent powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud.
 
-> **Status:** Phase 8 complete. Code execution sandbox: soft timeout with interactive wait/abort prompt, `max_extensions` cap, network isolation (enforced via `unshare` on Linux; advisory on macOS/Windows), and Unix resource caps (RLIMIT_FSIZE, RLIMIT_NPROC) via `resource.setrlimit`.
+> **Status:** Phase 9 complete. Multi-agent reviewer node (LangGraph `[REVIEWER]` role) and global filesystem access — the agent can now read and write files at any absolute path on the machine, not just within the workspace directory.
 
 ---
 
@@ -116,7 +116,13 @@ Starts the llama-server and drops into the interactive agent loop.
 
 ## Inference mode
 
-One `llama-server` process, one port. The agent serialises planner and executor phases through the same endpoint, injecting `[PLANNER]` / `[EXECUTOR]` system-prompt prefixes to differentiate behaviour.
+One `llama-server` process, one port. The agent serialises three roles through the same endpoint via distinct system-prompt prefixes:
+
+- `[PLANNER]` — handles clarification and assumptions
+- `[EXECUTOR]` — drives the ReAct tool-call loop
+- `[REVIEWER]` — checks completed work before verification; requests revision if needed (up to 2 cycles)
+
+Enable the reviewer with `reviewer_enabled = true` in `[agent]` config (default off).
 
 ---
 
@@ -152,6 +158,7 @@ dir = "~/.locoder/models"
 
 [agent]
 thinking_mode = true
+reviewer_enabled = false  # set true to enable the [REVIEWER] quality-gate node
 
 [rag]
 top_k = 5

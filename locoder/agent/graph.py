@@ -15,7 +15,7 @@ from rich.console import Console
 from typing_extensions import TypedDict
 
 from locoder.agent import history, prompts, sandbox, tools
-from locoder.agent.schema import Answer, ToolCall, parse_plan
+from locoder.agent.schema import Answer, Review, ToolCall, parse_plan, parse_review
 from locoder.models.client import (
     active_model_name,
     get_sync_client,
@@ -23,6 +23,7 @@ from locoder.models.client import (
 )
 
 _MAX_ITERATIONS = 30
+_MAX_REVIEWS = 2
 
 
 class AgentState(TypedDict):
@@ -34,6 +35,7 @@ class AgentState(TypedDict):
     answer: str
     pending_tool: dict[str, Any]  # {"tool": str, "arguments": dict} when a call is pending
     last_observation: str  # output from the last tool dispatch
+    review_count: int  # number of reviewer cycles completed
 
 
 def _call_llm(
@@ -108,7 +110,7 @@ def _verify_written_files(
         return
 
     py_files = [f for f in written if f.endswith(".py")]
-    abs_py_files = [str(workspace / f) for f in py_files]
+    abs_py_files = [str(workspace / f) if not Path(f).is_absolute() else f for f in py_files]
 
     if abs_py_files and verify_config.get("lint", True):
         console.print("[dim][verify] ruff check...[/dim]")
@@ -170,6 +172,12 @@ def make_graph(
     base_prompt = prompts.build_system_prompt(workspace, t_prefix)
     planner_system = "[PLANNER]\n" + base_prompt
     executor_system = "[EXECUTOR]\n" + base_prompt
+    reviewer_system = (
+        "[REVIEWER]\n"
+        "You are a code review agent. You review work produced by a coding agent and decide "
+        "whether it satisfies the user's request. Be concise and specific in your feedback."
+    )
+    reviewer_enabled: bool = bool(config.get("agent", {}).get("reviewer_enabled", False))
     verify_config: dict[str, Any] = config.get("verify", {})
 
     def _with_system(msgs: list[dict[str, Any]], system: str) -> list[dict[str, Any]]:
@@ -182,6 +190,9 @@ def make_graph(
 
     def invoke_executor(messages: list[dict[str, Any]]) -> dict[str, Any]:
         return _call_llm(client, model, _with_system(messages, executor_system))
+
+    def invoke_reviewer(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        return _call_llm(client, model, _with_system(messages, reviewer_system))
 
     # --- clarify node ---
     def clarify_node(state: AgentState) -> AgentState:
@@ -266,6 +277,45 @@ def make_graph(
             "last_observation": "",
         }
 
+    # --- reviewer node ---
+    def reviewer_node(state: AgentState) -> AgentState:
+        if state["review_count"] >= _MAX_REVIEWS:
+            console.print("[dim][review] Max reviews reached — accepting.[/dim]")
+            return state
+
+        console.print("[dim][review] Reviewing work...[/dim]")
+        review_messages: list[dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": prompts.build_reviewer_prompt(
+                    state["task"], state["answer"], state["written_files"]
+                ),
+            }
+        ]
+        data = invoke_reviewer(review_messages)
+        review: Review = parse_review(data)
+
+        if review.verdict != "revise":
+            console.print(f"[green][review] Approved: {review.reason or 'work looks good'}[/green]")
+            return {**state, "review_count": state["review_count"] + 1}
+
+        console.print(f"[yellow][review] Revision requested: {review.feedback}[/yellow]")
+        feedback_msg: dict[str, Any] = {
+            "role": "user",
+            "content": (
+                f"[Reviewer] The previous answer was not satisfactory.\n"
+                f"{review.feedback}\n"
+                f"Please revise your work and try again."
+            ),
+        }
+        return {
+            **state,
+            "done": False,
+            "answer": "",
+            "review_count": state["review_count"] + 1,
+            "messages": [*state["messages"], feedback_msg],
+        }
+
     # --- verify node ---
     def verify_node(state: AgentState) -> AgentState:
         if state["written_files"]:
@@ -273,19 +323,28 @@ def make_graph(
         return state
 
     def _route_plan(state: AgentState) -> str:
-        return "verify" if state["done"] else "act"
+        if not state["done"]:
+            return "act"
+        return "reviewer" if reviewer_enabled else "verify"
+
+    def _route_reviewer(state: AgentState) -> str:
+        return "verify" if state["done"] else "plan"
 
     graph: StateGraph[AgentState] = StateGraph(AgentState)
     graph.add_node("clarify", clarify_node)
     graph.add_node("plan", plan_node)
     graph.add_node("act", act_node)
     graph.add_node("observe", observe_node)
+    graph.add_node("reviewer", reviewer_node)
     graph.add_node("verify", verify_node)
     graph.set_entry_point("clarify")
     graph.add_edge("clarify", "plan")
-    graph.add_conditional_edges("plan", _route_plan, {"act": "act", "verify": "verify"})
+    graph.add_conditional_edges(
+        "plan", _route_plan, {"act": "act", "reviewer": "reviewer", "verify": "verify"}
+    )
     graph.add_edge("act", "observe")
     graph.add_edge("observe", "plan")
+    graph.add_conditional_edges("reviewer", _route_reviewer, {"verify": "verify", "plan": "plan"})
     graph.add_edge("verify", END)
     return graph.compile()
 
@@ -322,6 +381,7 @@ def run_agent(
         "answer": "",
         "pending_tool": {},
         "last_observation": "",
+        "review_count": 0,
     }
     final: AgentState = app.invoke(initial)
     if final.get("answer"):

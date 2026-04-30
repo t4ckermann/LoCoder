@@ -28,7 +28,7 @@ class TestReadFile:
         result = read_file("nope.txt", ws)
         assert result.startswith("Error:")
 
-    def test_path_traversal_rejected(self, ws: Path) -> None:
+    def test_relative_traversal_rejected(self, ws: Path) -> None:
         result = read_file("../../etc/passwd", ws)
         assert result.startswith("Error:")
 
@@ -43,7 +43,7 @@ class TestWriteFile:
         write_file("a/b/c.txt", "x", ws)
         assert (ws / "a" / "b" / "c.txt").exists()
 
-    def test_path_traversal_rejected(self, ws: Path) -> None:
+    def test_relative_traversal_rejected(self, ws: Path) -> None:
         result = write_file("../../evil.txt", "x", ws)
         assert result.startswith("Error:")
 
@@ -61,7 +61,7 @@ class TestListDirectory:
         result = list_directory("file.txt", ws)
         assert result.startswith("Error:")
 
-    def test_path_traversal_rejected(self, ws: Path) -> None:
+    def test_relative_traversal_rejected(self, ws: Path) -> None:
         result = list_directory("../../", ws)
         assert result.startswith("Error:")
 
@@ -78,8 +78,42 @@ class TestSearchCodebase:
         result = search_codebase("xyzzy", ".", ws)
         assert "No matches" in result
 
-    def test_path_traversal_rejected(self, ws: Path) -> None:
+    def test_relative_traversal_rejected(self, ws: Path) -> None:
         result = search_codebase("x", "../../", ws)
+        assert result.startswith("Error:")
+
+
+class TestGlobalFilesystemAccess:
+    def test_read_absolute_path(self, ws: Path) -> None:
+        outside = ws.parent / "locoder_phase9_read.txt"
+        outside.write_text("global read works")
+        try:
+            result = read_file(str(outside), ws)
+            assert result == "global read works"
+        finally:
+            outside.unlink(missing_ok=True)
+
+    def test_write_absolute_path(self, ws: Path) -> None:
+        outside = ws.parent / "locoder_phase9_write.txt"
+        try:
+            result = write_file(str(outside), "global write works", ws)
+            assert "Written" in result
+            assert outside.read_text() == "global write works"
+        finally:
+            outside.unlink(missing_ok=True)
+
+    def test_list_directory_absolute_path(self, ws: Path) -> None:
+        (ws / "marker.txt").write_text("")
+        result = list_directory(str(ws), ws)
+        assert "marker.txt" in result
+
+    def test_search_codebase_absolute_path(self, ws: Path) -> None:
+        (ws / "source.py").write_text("def phase9_func(): pass\n")
+        result = search_codebase("phase9_func", str(ws), ws)
+        assert "phase9_func" in result
+
+    def test_relative_traversal_still_blocked(self, ws: Path) -> None:
+        result = read_file("../../etc/passwd", ws)
         assert result.startswith("Error:")
 
 

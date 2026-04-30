@@ -260,6 +260,8 @@ Rules (in priority order):
 - Platform-specific stdlib modules (`resource`, `fcntl`) must be imported **inside** a `try/except ImportError` block, not at module level — they fail on Windows. Annotate with `# noqa: PLC0415`.
 - Agent sandbox config lives under `[sandbox]` in `.locoder.toml`: `execution_timeout` (int seconds, default 60), `max_extensions` (int, 0 = unlimited interactive prompts, default 10), `allow_network` (bool, default false). Any change to these keys is user-visible and requires a README + version bump.
 - Sandbox kill order: SIGTERM → wait `_GRACE_PERIOD` seconds → SIGKILL. Network isolation uses `unshare --net` on Linux (hard); advisory-only on macOS/Windows. Resource caps (`RLIMIT_FSIZE` 64 MB, `RLIMIT_NPROC` 64) are applied in the forked child via `preexec_fn`.
+- `reviewer_enabled = true` in `[agent]` activates the `[REVIEWER]` quality-gate node in the agent graph. Max 2 review cycles (`_MAX_REVIEWS`); auto-approves after limit. Default: false.
+- File tools accept absolute paths anywhere on the machine (Phase 9). Relative paths are still sandboxed to the workspace. Relative traversal (`../../`) remains rejected.
 
 ---
 
@@ -304,6 +306,25 @@ Cycles are forbidden. If you need to break a cycle, introduce a `Protocol` in th
 | 6 — Single-server roles | ✅ Complete | Dropped hierarchical two-port mode; single server with `[PLANNER]`/`[EXECUTOR]` system-prompt prefixes; ChromaDB telemetry suppressed. |
 | 7 — Post-change verification | ✅ Complete | `verify` node in agent graph runs ruff/mypy/pytest/manual on written files; per-project `[verify]` config; setup asks verification preferences. `--host`/`--port` flags added as a minor addition. |
 | 8 — Code execution safety | ✅ Complete | Soft timeout with interactive wait/abort prompt; `max_extensions` cap; network isolation via `unshare --net` on Linux (advisory on macOS/Windows); Unix resource caps (RLIMIT_FSIZE, RLIMIT_NPROC); SIGTERM → SIGKILL grace period on abort. |
+| 9 — Multi-agent extension | ✅ Complete | `[REVIEWER]` role added to LangGraph graph (plan → reviewer → verify/plan); global filesystem access — tools accept absolute paths anywhere on the machine; `[agent] reviewer_enabled` config key; `review_count` state field; max 2 review cycles before auto-approve. |
+
+### Design note — Phase 9: multi-agent reviewer + global filesystem access
+
+**Reviewer node:**
+- Added between `plan` (executor done) and `verify` nodes.
+- Uses a `[REVIEWER]` system-prompt role; calls the same `llama-server` endpoint.
+- Responds with `{"verdict": "approved"|"revise", "reason"|"feedback": "..."}`.
+- If "revise", adds reviewer feedback to `messages` and routes back to `plan` (`done=False`).
+- Max `_MAX_REVIEWS = 2` cycles before auto-approve (prevents infinite loops).
+- Controlled by `[agent] reviewer_enabled = true/false` (default: false); routing bypasses the node when disabled.
+
+**Global filesystem access:**
+- `_validated()` replaced by `_resolve()` in `tools.py`: absolute paths accepted as-is, relative paths still sandbox to workspace.
+- Relative traversal (`../../`) remains blocked (relative paths must resolve within workspace).
+- `_display_path()` helper shows workspace-relative paths for files inside workspace, absolute paths for files outside.
+- System prompt updated to tell the LLM it may use absolute paths for files outside the workspace root.
+- Workspace `.gitignore` filter in `search_codebase` is skipped for paths outside the workspace.
+- `_verify_written_files` in `graph.py` handles both relative and absolute written-file paths.
 
 ### Design note — Phase 6: single-server role model
 
