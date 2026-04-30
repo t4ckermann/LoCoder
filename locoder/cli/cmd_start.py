@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import socket
 from pathlib import Path
+from typing import Any  # noqa: F401 — used in config dict annotation below
 
 import typer
 from rich.console import Console
@@ -15,13 +17,53 @@ from locoder.server.launcher import ServerHandle, start_server, stop_server
 console = Console()
 
 
-def start() -> None:
+def _lan_ip() -> str | None:
+    """Return the machine's LAN IP by probing a remote address (no packet sent)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return str(s.getsockname()[0])
+    except OSError:
+        return None
+
+
+def _print_ready(handle: ServerHandle) -> None:
+    if handle.host == "0.0.0.0":
+        console.print(f"[bold green]Server ready — all interfaces, port {handle.port}[/bold green]")
+        console.print(f"  Local:  http://127.0.0.1:{handle.port}")
+        lan = _lan_ip()
+        if lan:
+            console.print(f"  LAN:    http://{lan}:{handle.port}")
+    else:
+        console.print(
+            f"[bold green]Server ready at http://{handle.host}:{handle.port}[/bold green]"
+        )
+
+
+def start(
+    host: str | None = typer.Option(
+        None,
+        "--host",
+        help="Override bind address (e.g. 0.0.0.0 to expose on LAN).",
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        help="Override server port.",
+    ),
+) -> None:
     """Start the llama-server and agent loop."""
     try:
-        config = read_config()
+        config: dict[str, Any] = read_config()
     except FileNotFoundError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None
+
+    # Apply CLI overrides to the in-memory config so all subsystems see them.
+    if host is not None:
+        config["inference"]["host"] = host
+    if port is not None:
+        config["inference"]["single"]["port"] = port
 
     model_name: str = config["inference"]["single"]["model"]
     if not is_installed(model_name):
@@ -50,7 +92,7 @@ def start() -> None:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None
 
-    console.print(f"[bold green]Server ready at http://127.0.0.1:{handle.port}[/bold green]")
+    _print_ready(handle)
 
     workspace = Path.cwd()
 

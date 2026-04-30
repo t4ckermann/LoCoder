@@ -299,7 +299,7 @@ Cycles are forbidden. If you need to break a cycle, introduce a `Protocol` in th
 | 4 — Framework stack | ✅ Complete | Dependency set locked, `.gitignore`-aware `search_codebase` via `pathspec` |
 | 5 — Memory & context | ✅ Complete | ChromaDB RAG, `fastembed` embeddings, persistent conversation history |
 | 6 — Single-server roles | ✅ Complete | Dropped hierarchical two-port mode; single server with `[PLANNER]`/`[EXECUTOR]` system-prompt prefixes; ChromaDB telemetry suppressed. |
-| 7 — Network serve mode | 📋 Planned | `locoder serve` (or `--host`/`--port` flags on `locoder start`) binds on a configurable address so the agent is reachable from any device on the local network. |
+| 7 — Post-change verification | ✅ Complete | `verify` node in agent graph runs ruff/mypy/pytest/manual on written files; per-project `[verify]` config; setup asks verification preferences. `--host`/`--port` flags added as a minor addition. |
 
 ### Design note — Phase 6: single-server role model
 

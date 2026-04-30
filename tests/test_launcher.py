@@ -21,6 +21,19 @@ def test_build_argv_required_flags() -> None:
     assert "127.0.0.1" in argv
 
 
+def test_build_argv_custom_host() -> None:
+    argv = build_argv("/bin/llama-server", Path("/tmp/m.gguf"), 8080, {}, host="0.0.0.0")
+    idx = argv.index("--host")
+    assert argv[idx + 1] == "0.0.0.0"
+
+
+def test_build_argv_lan_host() -> None:
+    argv = build_argv("/bin/llama-server", Path("/tmp/m.gguf"), 9090, {}, host="192.168.1.50")
+    idx = argv.index("--host")
+    assert argv[idx + 1] == "192.168.1.50"
+    assert "9090" in argv
+
+
 def test_build_argv_flash_attn_defaults_to_auto() -> None:
     argv = build_argv("/bin/llama-server", Path("/tmp/m.gguf"), 8080, {})
     assert "--flash-attn" in argv

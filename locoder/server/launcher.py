@@ -17,6 +17,7 @@ from locoder.models.downloader import model_dir
 class ServerHandle:
     proc: subprocess.Popen[bytes]
     port: int
+    host: str
     model_path: Path
     role: str
 
@@ -26,6 +27,7 @@ def build_argv(
     model_path: Path,
     port: int,
     args: dict[str, object],
+    host: str = "127.0.0.1",
 ) -> list[str]:
     argv = [
         llama_server_bin,
@@ -34,7 +36,7 @@ def build_argv(
         "--port",
         str(port),
         "--host",
-        "127.0.0.1",
+        host,
     ]
 
     key_map = {
@@ -61,8 +63,12 @@ def build_argv(
     return argv
 
 
-def _poll_health(port: int, timeout: float = 60.0, interval: float = 0.5) -> bool:
-    url = f"http://127.0.0.1:{port}/health"
+def _poll_health(
+    port: int, host: str = "127.0.0.1", timeout: float = 60.0, interval: float = 0.5
+) -> bool:
+    # 0.0.0.0 means all interfaces — poll the loopback instead
+    poll_host = "127.0.0.1" if host == "0.0.0.0" else host
+    url = f"http://{poll_host}:{port}/health"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -81,8 +87,9 @@ def _launch_one(
     port: int,
     server_args: dict[str, object],
     role: str,
+    host: str = "127.0.0.1",
 ) -> ServerHandle:
-    argv = build_argv(bin_path, model_path, port, server_args)
+    argv = build_argv(bin_path, model_path, port, server_args, host)
 
     # Ensure shared libraries next to the binary are found (needed when locoder
     # installed a pre-built release bundle into ~/.locoder/bin/).
@@ -99,7 +106,7 @@ def _launch_one(
         env=env,
     )
 
-    if not _poll_health(port):
+    if not _poll_health(port, host):
         proc.terminate()
         _, stderr = proc.communicate(timeout=5)
         tail = stderr.decode(errors="replace")[-2000:]
@@ -107,7 +114,7 @@ def _launch_one(
             f"llama-server ({role}) did not become healthy within 60 s.\nLast stderr:\n{tail}"
         )
 
-    return ServerHandle(proc=proc, port=port, model_path=model_path, role=role)
+    return ServerHandle(proc=proc, port=port, host=host, model_path=model_path, role=role)
 
 
 def start_server(config: dict[str, Any]) -> ServerHandle:
@@ -116,6 +123,7 @@ def start_server(config: dict[str, Any]) -> ServerHandle:
     server_args: dict[str, Any] = dict(inf.get("server_args", {}))
     model_name: str = inf["single"]["model"]
     port: int = inf["single"]["port"]
+    host: str = inf.get("host", "127.0.0.1")
     gguf = _resolve_gguf(model_name)
 
     spec = inf.get("speculative", {})
@@ -124,7 +132,7 @@ def start_server(config: dict[str, Any]) -> ServerHandle:
         server_args["model_draft"] = str(_resolve_gguf(draft_name))
         server_args["draft_max"] = int(spec.get("draft_max", 8))
 
-    handle = _launch_one(bin_path, gguf, port, server_args, "single")
+    handle = _launch_one(bin_path, gguf, port, server_args, "single", host)
     atexit.register(stop_server, handle)
     return handle
 
