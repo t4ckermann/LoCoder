@@ -257,6 +257,9 @@ Rules (in priority order):
 - `BaseException` catch in `downloader.py` is intentional (partial-file cleanup on Ctrl-C) — leave it.
 - Bare `except Exception: pass` in `hardware/detect.py` is intentional (optional tools like `nvidia-smi`) — leave it.
 - `thinking_mode = true` in `.locoder.toml` enables the `<|think|>` prefix for Gemma 4 models (see `locoder/models/client.py:thinking_prefix`).
+- Platform-specific stdlib modules (`resource`, `fcntl`) must be imported **inside** a `try/except ImportError` block, not at module level — they fail on Windows. Annotate with `# noqa: PLC0415`.
+- Agent sandbox config lives under `[sandbox]` in `.locoder.toml`: `execution_timeout` (int seconds, default 60), `max_extensions` (int, 0 = unlimited interactive prompts, default 10), `allow_network` (bool, default false). Any change to these keys is user-visible and requires a README + version bump.
+- Sandbox kill order: SIGTERM → wait `_GRACE_PERIOD` seconds → SIGKILL. Network isolation uses `unshare --net` on Linux (hard); advisory-only on macOS/Windows. Resource caps (`RLIMIT_FSIZE` 64 MB, `RLIMIT_NPROC` 64) are applied in the forked child via `preexec_fn`.
 
 ---
 
@@ -300,6 +303,7 @@ Cycles are forbidden. If you need to break a cycle, introduce a `Protocol` in th
 | 5 — Memory & context | ✅ Complete | ChromaDB RAG, `fastembed` embeddings, persistent conversation history |
 | 6 — Single-server roles | ✅ Complete | Dropped hierarchical two-port mode; single server with `[PLANNER]`/`[EXECUTOR]` system-prompt prefixes; ChromaDB telemetry suppressed. |
 | 7 — Post-change verification | ✅ Complete | `verify` node in agent graph runs ruff/mypy/pytest/manual on written files; per-project `[verify]` config; setup asks verification preferences. `--host`/`--port` flags added as a minor addition. |
+| 8 — Code execution safety | ✅ Complete | Soft timeout with interactive wait/abort prompt; `max_extensions` cap; network isolation via `unshare --net` on Linux (advisory on macOS/Windows); Unix resource caps (RLIMIT_FSIZE, RLIMIT_NPROC); SIGTERM → SIGKILL grace period on abort. |
 
 ### Design note — Phase 6: single-server role model
 

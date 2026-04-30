@@ -59,6 +59,7 @@ def _dispatch(
     call: ToolCall,
     workspace: Path,
     config: dict[str, Any],
+    console: Console,
 ) -> str:
     """Execute a ToolCall and return its string result."""
     name = call.tool
@@ -68,12 +69,15 @@ def _dispatch(
     if name == "write_file":
         return tools.write_file(str(args.get("path", "")), str(args.get("content", "")), workspace)
     if name == "run_code":
-        timeout = int(config.get("sandbox", {}).get("execution_timeout", 60))
+        sb_cfg = config.get("sandbox", {})
         result = sandbox.run_code(
             str(args.get("code", "")),
             str(args.get("language", "python")),
             workspace,
-            timeout=timeout,
+            timeout=int(sb_cfg.get("execution_timeout", 60)),
+            max_extensions=int(sb_cfg.get("max_extensions", 10)),
+            allow_network=bool(sb_cfg.get("allow_network", False)),
+            console=console,
         )
         return (
             f"exit_code: {result['exit_code']}\n"
@@ -228,7 +232,7 @@ def make_graph(
         arguments = dict(state["pending_tool"].get("arguments") or {})
         call = ToolCall(tool=tool_name, arguments=arguments)
         console.print(f"[bold blue][act][/bold blue]  {call.tool}({_fmt_args(call.arguments)})")
-        result = _dispatch(call, workspace, config)
+        result = _dispatch(call, workspace, config, console)
         return {**state, "last_observation": result}
 
     # --- observe node ---
