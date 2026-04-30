@@ -2,7 +2,7 @@
 
 Local-first coding agent powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Runs entirely on your machine — no API keys, no cloud.
 
-> **Status:** Phase 7 complete. Post-change verification (ruff, mypy, pytest, manual) runs automatically after the agent writes files; preferences are set per-project via `locoder setup`. `--host`/`--port` flags also added.
+> **Status:** Phase 8 complete. Code execution sandbox: soft timeout with interactive wait/abort prompt, `max_extensions` cap, network isolation (enforced via `unshare` on Linux; advisory on macOS/Windows), and Unix resource caps (RLIMIT_FSIZE, RLIMIT_NPROC) via `resource.setrlimit`.
 
 ---
 
@@ -160,8 +160,9 @@ chunk_overlap = 64
 exclude = ["**/.git", "**/node_modules", "**/__pycache__"]
 
 [sandbox]
-execution_timeout = 60
-allow_network = false
+execution_timeout = 60   # seconds before the wait/abort prompt appears
+max_extensions = 10      # max times the user can choose [w]; 0 = unlimited
+allow_network = false    # set true to allow outbound connections from code
 
 # Per-project verification — what the agent runs after writing files
 [verify]
