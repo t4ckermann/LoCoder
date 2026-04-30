@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from locoder.agent.schema import Answer, ToolCall, parse_plan
+from locoder.agent.schema import Answer, Review, ToolCall, parse_plan, parse_review
 
 
 def test_parse_plan_tool_call() -> None:
@@ -29,3 +29,31 @@ def test_parse_plan_missing_arguments_defaults_to_empty() -> None:
     result = parse_plan(data)
     assert isinstance(result, ToolCall)
     assert result.arguments == {}
+
+
+def test_parse_review_approved() -> None:
+    data = {"verdict": "approved", "reason": "looks good"}
+    result = parse_review(data)
+    assert isinstance(result, Review)
+    assert result.verdict == "approved"
+    assert result.reason == "looks good"
+
+
+def test_parse_review_revise() -> None:
+    data = {"verdict": "revise", "feedback": "missing error handling in the main function"}
+    result = parse_review(data)
+    assert isinstance(result, Review)
+    assert result.verdict == "revise"
+    assert result.feedback == "missing error handling in the main function"
+
+
+def test_parse_review_defaults_to_approved_on_empty_data() -> None:
+    result = parse_review({})
+    assert result.verdict == "approved"
+    assert result.reason == ""
+    assert result.feedback == ""
+
+
+def test_parse_review_unknown_verdict_preserved() -> None:
+    result = parse_review({"verdict": "maybe"})
+    assert result.verdict == "maybe"
