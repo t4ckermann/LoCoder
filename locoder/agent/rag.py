@@ -121,7 +121,7 @@ def _load_embedder(model_name: str, console: Console | None, _retry: bool = Fals
 def index_workspace(
     workspace: Path, config: dict[str, Any], console: Console | None = None
 ) -> None:
-    """Chunk and upsert all workspace files into ChromaDB. Imports are deferred."""
+    """Chunk and upsert changed workspace files into ChromaDB. Imports are deferred."""
     # Late imports — ChromaDB adds ~1-2s startup cost; don't pay it at module load.
     import chromadb
 
@@ -141,6 +141,50 @@ def index_workspace(
             "Add patterns to [rag] exclude in .locoder.toml to skip build artefacts.[/yellow]"
         )
 
+    # Build rel -> mtime map for current files.
+    file_mtimes: dict[str, float] = {}
+    for fp in files:
+        with contextlib.suppress(OSError):
+            file_mtimes[str(fp.relative_to(workspace))] = fp.stat().st_mtime
+
+    # Open collection first so we can diff against stored mtimes before loading the model.
+    vector_store_dir.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(vector_store_dir))
+    collection = client.get_or_create_collection(_collection_name(workspace))
+
+    existing = collection.get(include=["metadatas"])  # type: ignore[list-item]
+    existing_ids: list[str] = existing.get("ids") or []
+    existing_metas: list[Any] = existing.get("metadatas") or []
+
+    # Derive the highest mtime we already have indexed for each file.
+    indexed_mtimes: dict[str, float] = {}
+    for meta in existing_metas:
+        if not isinstance(meta, dict):
+            continue
+        rel = str(meta.get("file", ""))
+        mtime = float(meta.get("mtime", 0.0))
+        if rel and mtime > indexed_mtimes.get(rel, 0.0):
+            indexed_mtimes[rel] = mtime
+
+    changed_rels = [rel for rel, mt in file_mtimes.items() if mt > indexed_mtimes.get(rel, 0.0)]
+    removed_rels = {rel for rel in indexed_mtimes if rel not in file_mtimes}
+
+    # Purge chunks for deleted or modified files.
+    stale_rels = set(changed_rels) | removed_rels
+    if stale_rels:
+        ids_to_delete = [
+            eid
+            for eid, emeta in zip(existing_ids, existing_metas, strict=False)
+            if isinstance(emeta, dict) and str(emeta.get("file", "")) in stale_rels
+        ]
+        if ids_to_delete:
+            collection.delete(ids=ids_to_delete)
+
+    if not changed_rels:
+        if console is not None:
+            console.print(f"[dim][rag] Index up-to-date ({len(files)} files).[/dim]")
+        return
+
     model_slug = "models--" + embed_model_name.replace("/", "--")
     if not (_fastembed_cache_dir() / model_slug).exists() and console is not None:
         console.print(
@@ -150,25 +194,21 @@ def index_workspace(
 
     if console is not None:
         console.print(
-            f"[dim][rag] Indexing {len(files)} files (model: {embed_model_name})...[/dim]"
+            f"[dim][rag] Indexing {len(changed_rels)}/{len(files)} files "
+            f"(model: {embed_model_name})...[/dim]"
         )
-
-    embedder = _load_embedder(embed_model_name, console)
-    vector_store_dir.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(vector_store_dir))
-    collection = client.get_or_create_collection(_collection_name(workspace))
 
     documents: list[str] = []
     metadatas: list[_Metadata] = []
     ids: list[str] = []
 
-    for file_path in files:
+    for rel in changed_rels:
+        file_path = workspace / rel
         try:
             text = file_path.read_text(errors="replace")
         except OSError:
             continue
-        rel = str(file_path.relative_to(workspace))
-        mtime: float = file_path.stat().st_mtime
+        mtime = file_mtimes[rel]
         for i, chunk in enumerate(_chunk_text(text, chunk_size, overlap)):
             documents.append(chunk)
             metadatas.append({"file": rel, "chunk": i, "mtime": mtime})
@@ -176,6 +216,8 @@ def index_workspace(
 
     if not documents:
         return
+
+    embedder = _load_embedder(embed_model_name, console)
 
     batch = 100
     for start in range(0, len(documents), batch):
@@ -191,7 +233,9 @@ def index_workspace(
         )
 
     if console is not None:
-        console.print(f"[dim][rag] Done — {len(documents)} chunks from {len(files)} files.[/dim]")
+        console.print(
+            f"[dim][rag] Done — {len(documents)} chunks from {len(changed_rels)} files.[/dim]"
+        )
 
 
 def search(query: str, config: dict[str, Any], workspace: Path) -> str:

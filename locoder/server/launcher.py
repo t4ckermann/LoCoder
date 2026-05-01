@@ -145,7 +145,7 @@ def _resolve_gguf(model_name: str) -> Path:
             f"No .gguf file found for model '{model_name}' in {d}. "
             "Run `locoder pull <model>` first."
         )
-    return ggufs[0]
+    return sorted(ggufs)[0]
 
 
 def stop_server(handle: ServerHandle) -> None:

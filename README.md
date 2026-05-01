@@ -109,6 +109,7 @@ Starts the llama-server and drops into the interactive agent loop.
 | `mistral-nemo` | 12 GB | 12.2B | Best native tool calling |
 | `phi-4` | 16 GB | 14B | Strong reasoning |
 | `qwen2.5-coder-14b` | 16 GB | 14.8B | Best code quality in mid-tier |
+| `qwen3-coder-next` | 64 GB | 79.7B | Qwen3 80B coder; sharded download (4 parts); thinking mode |
 
 **Quantization:** `q5_k_m` is the recommended default. Use `q4_k_m` for CPU-only. Use `q8_0` for near-lossless quality.
 
