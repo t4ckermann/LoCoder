@@ -7,7 +7,12 @@ from rich.console import Console
 
 from locoder.agent import history, rag
 from locoder.agent.graph import run_agent
-from locoder.models.client import active_model_name, supports_thinking
+from locoder.models.client import (
+    active_model_name,
+    executor_model_name,
+    planner_model_name,
+    supports_thinking,
+)
 from locoder.server.launcher import ServerHandle
 
 _HELP_TEXT = """
@@ -28,7 +33,17 @@ def _print_status(
     console: Console,
     thinking_enabled: bool,
 ) -> None:
-    console.print(f"[bold]Model:[/bold] {active_model_name(config)}  port={handle.port}")
+    inf = config.get("inference", {})
+    if inf.get("mode", "single") == "dual":
+        dual = inf["dual"]
+        console.print(
+            f"[bold]Planner:[/bold] {planner_model_name(config)}  port={dual['planner']['port']}"
+        )
+        console.print(
+            f"[bold]Executor:[/bold] {executor_model_name(config)}  port={dual['executor']['port']}"
+        )
+    else:
+        console.print(f"[bold]Model:[/bold] {active_model_name(config)}  port={handle.port}")
     state = "[green]on[/green]" if thinking_enabled else "[dim]off[/dim]"
     console.print(f"[bold]Thinking:[/bold] {state}")
 
@@ -44,7 +59,7 @@ def interactive_loop(
 
     rag.index_workspace(workspace, config, console)
 
-    model = active_model_name(config)
+    model = planner_model_name(config)
     thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
 
     while True:

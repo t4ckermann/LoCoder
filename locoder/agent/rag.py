@@ -219,8 +219,9 @@ def index_workspace(
 
     embedder = _load_embedder(embed_model_name, console)
 
+    total_chunks = len(documents)
     batch = 100
-    for start in range(0, len(documents), batch):
+    for start in range(0, total_chunks, batch):
         batch_docs = documents[start : start + batch]
         raw_embeddings = [list(e) for e in embedder.embed(batch_docs)]
         # chromadb accepts Sequence[float] per chunk; cast silences the ndarray overload mismatch
@@ -231,10 +232,13 @@ def index_workspace(
             embeddings=embeddings,  # type: ignore[arg-type]
             metadatas=metadatas[start : start + batch],  # type: ignore[arg-type]
         )
+        if console is not None:
+            done = min(start + batch, total_chunks)
+            console.print(f"[dim][rag] Embedded {done}/{total_chunks} chunks...[/dim]")
 
     if console is not None:
         console.print(
-            f"[dim][rag] Done — {len(documents)} chunks from {len(changed_rels)} files.[/dim]"
+            f"[dim][rag] Done — {total_chunks} chunks from {len(changed_rels)} files.[/dim]"
         )
 
 

@@ -117,6 +117,37 @@ def _launch_one(
     return ServerHandle(proc=proc, port=port, host=host, model_path=model_path, role=role)
 
 
+def start_servers_dual(config: dict[str, Any]) -> tuple[ServerHandle, ServerHandle]:
+    """Start two llama-server processes for dual-model (planner + executor) mode."""
+    inf = config["inference"]
+    bin_path: str = inf["llama_server_bin"]
+    server_args: dict[str, Any] = dict(inf.get("server_args", {}))
+    host: str = inf.get("host", "127.0.0.1")
+    dual: dict[str, Any] = inf["dual"]
+
+    planner_handle = _launch_one(
+        bin_path,
+        _resolve_gguf(str(dual["planner"]["model"])),
+        int(dual["planner"]["port"]),
+        server_args,
+        "planner",
+        host,
+    )
+    atexit.register(stop_server, planner_handle)
+
+    executor_handle = _launch_one(
+        bin_path,
+        _resolve_gguf(str(dual["executor"]["model"])),
+        int(dual["executor"]["port"]),
+        server_args,
+        "executor",
+        host,
+    )
+    atexit.register(stop_server, executor_handle)
+
+    return planner_handle, executor_handle
+
+
 def start_server(config: dict[str, Any]) -> ServerHandle:
     inf = config["inference"]
     bin_path: str = inf["llama_server_bin"]

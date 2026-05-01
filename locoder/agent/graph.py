@@ -18,7 +18,11 @@ from locoder.agent import history, prompts, sandbox, tools
 from locoder.agent.schema import Answer, Review, ToolCall, parse_plan, parse_review
 from locoder.models.client import (
     active_model_name,
+    executor_model_name,
+    get_executor_client,
+    get_planner_client,
     get_sync_client,
+    planner_model_name,
     thinking_prefix,
 )
 
@@ -162,16 +166,28 @@ def make_graph(
     thinking_mode: bool | None = None,
 ) -> Any:
     """Build and compile the agent LangGraph state machine."""
-    client = get_sync_client(config)
-    model = active_model_name(config)
+    dual_mode: bool = config.get("inference", {}).get("mode", "single") == "dual"
+
+    if dual_mode:
+        p_client = get_planner_client(config)
+        e_client = get_executor_client(config)
+        p_model = planner_model_name(config)
+        e_model = executor_model_name(config)
+    else:
+        p_client = get_sync_client(config)
+        e_client = p_client
+        p_model = active_model_name(config)
+        e_model = p_model
+
     if thinking_mode is None:
         thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
     else:
         thinking_enabled = thinking_mode
-    t_prefix = thinking_prefix(model, thinking_enabled)
-    base_prompt = prompts.build_system_prompt(workspace, t_prefix)
-    planner_system = "[PLANNER]\n" + base_prompt
-    executor_system = "[EXECUTOR]\n" + base_prompt
+
+    p_prefix = thinking_prefix(p_model, thinking_enabled)
+    e_prefix = thinking_prefix(e_model, thinking_enabled)
+    planner_system = "[PLANNER]\n" + prompts.build_system_prompt(workspace, p_prefix)
+    executor_system = "[EXECUTOR]\n" + prompts.build_system_prompt(workspace, e_prefix)
     reviewer_system = (
         "[REVIEWER]\n"
         "You are a code review agent. You review work produced by a coding agent and decide "
@@ -186,13 +202,13 @@ def make_graph(
         return [{"role": "system", "content": system}, *msgs]
 
     def invoke_planner(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(client, model, _with_system(messages, planner_system))
+        return _call_llm(p_client, p_model, _with_system(messages, planner_system))
 
     def invoke_executor(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(client, model, _with_system(messages, executor_system))
+        return _call_llm(e_client, e_model, _with_system(messages, executor_system))
 
     def invoke_reviewer(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(client, model, _with_system(messages, reviewer_system))
+        return _call_llm(p_client, p_model, _with_system(messages, reviewer_system))
 
     # --- clarify node ---
     def clarify_node(state: AgentState) -> AgentState:

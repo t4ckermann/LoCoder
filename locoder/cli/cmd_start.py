@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import socket
 from pathlib import Path
-from typing import Any  # noqa: F401 — used in config dict annotation below
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -12,7 +12,7 @@ from locoder.config.manager import read_config
 from locoder.hardware.detect import available_gb as _available_gb
 from locoder.models.downloader import download, is_installed
 from locoder.models.registry import lookup
-from locoder.server.launcher import ServerHandle, start_server, stop_server
+from locoder.server.launcher import ServerHandle, start_server, start_servers_dual, stop_server
 
 console = Console()
 
@@ -40,6 +40,25 @@ def _print_ready(handle: ServerHandle) -> None:
         )
 
 
+def _ensure_installed(model_name: str) -> None:
+    """Check model is installed; prompt to download if not. Raises typer.Exit on failure."""
+    if is_installed(model_name):
+        return
+    entry = lookup(model_name)
+    size_hint = f" ({entry['ram_tier']} model)" if entry else ""
+    console.print(
+        f"[yellow]Configured model [bold]{model_name}[/bold]{size_hint} is not installed.[/yellow]"
+    )
+    console.print(f"[dim]Tip: run `locoder pull {model_name}` to download it separately.[/dim]")
+    if not typer.confirm(f"Download '{model_name}' now?", default=True):
+        raise typer.Exit(0)
+    try:
+        download(model_name, available_gb=_available_gb())
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+
+
 def start(
     host: str | None = typer.Option(
         None,
@@ -49,7 +68,7 @@ def start(
     port: int | None = typer.Option(
         None,
         "--port",
-        help="Override server port.",
+        help="Override server port (single mode only).",
     ),
 ) -> None:
     """Start the llama-server and agent loop."""
@@ -59,47 +78,41 @@ def start(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None
 
-    # Apply CLI overrides to the in-memory config so all subsystems see them.
     if host is not None:
         config["inference"]["host"] = host
     if port is not None:
         config["inference"]["single"]["port"] = port
 
-    model_name: str = config["inference"]["single"]["model"]
-    if not is_installed(model_name):
-        entry = lookup(model_name)
-        size_hint = f" ({entry['ram_tier']} model)" if entry else ""
-        console.print(
-            f"[yellow]Configured model [bold]{model_name}[/bold]{size_hint} "
-            f"is not installed.[/yellow]"
-        )
-        console.print(
-            f"[dim]Tip: edit ~/.locoder/config.toml to change the model, "
-            f"or run `locoder pull {model_name}` to download it separately.[/dim]"
-        )
-        if not typer.confirm(f"Download '{model_name}' now?", default=True):
-            raise typer.Exit(0)
-        try:
-            download(model_name, available_gb=_available_gb())
-        except ValueError as exc:
-            console.print(f"[red]{exc}[/red]")
-            raise typer.Exit(1) from None
+    mode: str = config["inference"].get("mode", "single")
+    handles: list[ServerHandle] = []
 
-    handle: ServerHandle
     try:
-        handle = start_server(config)
+        if mode == "dual":
+            dual = config["inference"]["dual"]
+            _ensure_installed(str(dual["planner"]["model"]))
+            _ensure_installed(str(dual["executor"]["model"]))
+            planner_h, executor_h = start_servers_dual(config)
+            handles = [planner_h, executor_h]
+            primary = planner_h
+        else:
+            _ensure_installed(str(config["inference"]["single"]["model"]))
+            single_h = start_server(config)
+            handles = [single_h]
+            primary = single_h
     except (RuntimeError, FileNotFoundError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None
 
-    _print_ready(handle)
+    for h in handles:
+        _print_ready(h)
 
     workspace = Path.cwd()
 
     try:
-        interactive_loop(config, handle, workspace, console)
+        interactive_loop(config, primary, workspace, console)
     except KeyboardInterrupt:
         pass
     finally:
         console.print("\n[yellow]Shutting down...[/yellow]")
-        stop_server(handle)
+        for h in handles:
+            stop_server(h)

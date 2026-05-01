@@ -117,11 +117,26 @@ Starts the llama-server and drops into the interactive agent loop.
 
 ## Inference mode
 
-One `llama-server` process, one port. The agent serialises three roles through the same endpoint via distinct system-prompt prefixes:
+### Single (default)
 
-- `[PLANNER]` — handles clarification and assumptions
-- `[EXECUTOR]` — drives the ReAct tool-call loop
-- `[REVIEWER]` — checks completed work before verification; requests revision if needed (up to 2 cycles)
+One `llama-server` process, one port. Three roles share the same model via distinct system-prompt prefixes:
+
+- `[PLANNER]` — clarification and assumptions
+- `[EXECUTOR]` — ReAct tool-call loop
+- `[REVIEWER]` — quality gate before verification (up to 2 cycles; default off)
+
+### Dual
+
+Two `llama-server` processes on separate ports — one thinking-capable model for planning/review, one coding-specialized model for execution. Doubles RAM usage but gives each role its best-fit model.
+
+Set `mode = "dual"` in `[inference]` and add `[inference.dual.planner]` / `[inference.dual.executor]` sections (see Config below). Run `locoder pull` for both models before starting.
+
+**Recommended combination:**
+
+| Role | Model | Why |
+|---|---|---|
+| Planner + Reviewer | `qwen3-8b` | Hybrid thinking mode; strong reasoning |
+| Executor | `qwen2.5-coder-7b` | Coding-specialized; fast tool calls |
 
 Enable the reviewer with `reviewer_enabled = true` in `[agent]` config (default off).
 
@@ -134,10 +149,23 @@ Enable the reviewer with `reviewer_enabled = true` in `[agent]` config (default 
 ```toml
 [inference]
 llama_server_bin = "..."
+mode = "single"   # "single" (default) or "dual"
 
 [inference.single]
 model = "qwen2.5-coder-7b"
 port = 8080
+
+# ── Dual-model mode ──────────────────────────────────────────────────────────
+# Uncomment and set mode = "dual" above to use separate models per role.
+# Both models must be pulled first: locoder pull qwen3-8b && locoder pull qwen2.5-coder-7b
+# [inference.dual.planner]
+# model = "qwen3-8b"           # thinking-capable model for planning and review
+# port = 8082
+#
+# [inference.dual.executor]
+# model = "qwen2.5-coder-7b"   # coding-specialized model for tool-call execution
+# port = 8083
+# ─────────────────────────────────────────────────────────────────────────────
 
 # server_args are auto-tuned by `locoder setup` based on detected hardware
 [inference.server_args]
