@@ -220,7 +220,7 @@ def index_workspace(
     embedder = _load_embedder(embed_model_name, console)
 
     total_chunks = len(documents)
-    batch = 100
+    batch: int = int(rag_cfg.get("embed_batch_size", 16))
     for start in range(0, total_chunks, batch):
         batch_docs = documents[start : start + batch]
         raw_embeddings = [list(e) for e in embedder.embed(batch_docs)]

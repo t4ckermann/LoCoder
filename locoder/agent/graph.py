@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import shlex
 import subprocess
 from collections.abc import Callable
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from langgraph.graph import END, StateGraph
-from openai import OpenAI
+from openai import InternalServerError, OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from rich.console import Console
 from typing_extensions import TypedDict
@@ -42,23 +43,47 @@ class AgentState(TypedDict):
     review_count: int  # number of reviewer cycles completed
 
 
+def _strip_thinking(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks from model output (Qwen3/DeepSeek-R1)."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
+def _extract_json(text: str) -> dict[str, Any]:
+    """Best-effort JSON extraction; falls back to wrapping plain text as an answer."""
+    with contextlib.suppress(json.JSONDecodeError):
+        return cast(dict[str, Any], json.loads(text))
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        with contextlib.suppress(json.JSONDecodeError):
+            return cast(dict[str, Any], json.loads(text[start : end + 1]))
+    return {"action": "answer", "content": text}
+
+
 def _call_llm(
     client: OpenAI,
     model: str,
     messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Call llama-server with json_object response format; return parsed dict."""
-    resp = client.chat.completions.create(
-        model=model,
-        messages=cast(list[ChatCompletionMessageParam], messages),
-        response_format={"type": "json_object"},
-        temperature=0.2,
-    )
-    raw = (resp.choices[0].message.content or "{}").strip()
+    """Call llama-server and return a parsed dict.
+
+    Uses plain-text completion (no JSON grammar enforcement) so that models which
+    emit <think>…</think> blocks before JSON don't fail.  Strips thinking blocks
+    before attempting to parse, and falls back to a best-effort JSON extraction.
+    """
     try:
-        return cast(dict[str, Any], json.loads(raw))
-    except json.JSONDecodeError:
-        return {"action": "answer", "content": raw}
+        resp = client.chat.completions.create(
+            model=model,
+            messages=cast(list[ChatCompletionMessageParam], messages),
+            temperature=0.2,
+            max_tokens=4096,
+        )
+    except InternalServerError as exc:
+        raise RuntimeError(
+            "Inference server returned 500. If this keeps happening try "
+            'flash_attn = "off" or a smaller ctx_size in .locoder.toml, then restart.'
+        ) from exc
+    raw = _strip_thinking((resp.choices[0].message.content or "{}").strip())
+    return _extract_json(raw)
 
 
 def _dispatch(
@@ -186,8 +211,6 @@ def make_graph(
 
     p_prefix = thinking_prefix(p_model, thinking_enabled)
     e_prefix = thinking_prefix(e_model, thinking_enabled)
-    planner_system = "[PLANNER]\n" + prompts.build_system_prompt(workspace, p_prefix)
-    executor_system = "[EXECUTOR]\n" + prompts.build_system_prompt(workspace, e_prefix)
     reviewer_system = (
         "[REVIEWER]\n"
         "You are a code review agent. You review work produced by a coding agent and decide "
@@ -196,16 +219,34 @@ def make_graph(
     reviewer_enabled: bool = bool(config.get("agent", {}).get("reviewer_enabled", False))
     verify_config: dict[str, Any] = config.get("verify", {})
 
-    def _with_system(msgs: list[dict[str, Any]], system: str) -> list[dict[str, Any]]:
+    # /think-style prefixes (Qwen3) must appear in the last user message, not the system prompt.
+    # <|think|>-style prefixes (Gemma4) go in the system prompt as-is.
+    p_user_suffix = p_prefix if p_prefix.startswith("/") else ""
+    e_user_suffix = e_prefix if e_prefix.startswith("/") else ""
+    p_sys_prefix = "" if p_prefix.startswith("/") else p_prefix
+    e_sys_prefix = "" if e_prefix.startswith("/") else e_prefix
+    planner_system = "[PLANNER]\n" + prompts.build_system_prompt(workspace, p_sys_prefix)
+    executor_system = "[EXECUTOR]\n" + prompts.build_system_prompt(workspace, e_sys_prefix)
+
+    def _with_system(
+        msgs: list[dict[str, Any]], system: str, user_suffix: str = ""
+    ) -> list[dict[str, Any]]:
         if msgs and msgs[0].get("role") == "system":
-            return [{"role": "system", "content": system}, *msgs[1:]]
-        return [{"role": "system", "content": system}, *msgs]
+            result: list[dict[str, Any]] = [{"role": "system", "content": system}, *msgs[1:]]
+        else:
+            result = [{"role": "system", "content": system}, *msgs]
+        if user_suffix:
+            for i in range(len(result) - 1, -1, -1):
+                if result[i].get("role") == "user":
+                    result[i] = {**result[i], "content": f"{result[i]['content']}\n{user_suffix}"}
+                    break
+        return result
 
     def invoke_planner(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(p_client, p_model, _with_system(messages, planner_system))
+        return _call_llm(p_client, p_model, _with_system(messages, planner_system, p_user_suffix))
 
     def invoke_executor(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(e_client, e_model, _with_system(messages, executor_system))
+        return _call_llm(e_client, e_model, _with_system(messages, executor_system, e_user_suffix))
 
     def invoke_reviewer(messages: list[dict[str, Any]]) -> dict[str, Any]:
         return _call_llm(p_client, p_model, _with_system(messages, reviewer_system))
@@ -215,7 +256,8 @@ def make_graph(
         clarify_messages: list[dict[str, Any]] = [
             {"role": "user", "content": prompts.build_clarify_prompt(state["task"])},
         ]
-        data = invoke_planner(clarify_messages)
+        with console.status("[dim]Thinking...[/dim]", spinner="dots"):
+            data = invoke_planner(clarify_messages)
         assumptions: list[str] = data.get("assumptions", [])
 
         if assumptions:
@@ -244,8 +286,9 @@ def make_graph(
             console.print("[yellow]Maximum iterations reached — stopping.[/yellow]")
             return {**state, "done": True, "answer": "Stopped: maximum iterations reached."}
 
-        console.print(f"[dim][plan] thinking... (step {state['iterations'] + 1})[/dim]")
-        data = invoke_executor(state["messages"])
+        label = f"[dim]Working... (step {state['iterations'] + 1})[/dim]"
+        with console.status(label, spinner="dots"):
+            data = invoke_executor(state["messages"])
         step = parse_plan(data)
 
         if isinstance(step, Answer):
@@ -299,7 +342,6 @@ def make_graph(
             console.print("[dim][review] Max reviews reached — accepting.[/dim]")
             return state
 
-        console.print("[dim][review] Reviewing work...[/dim]")
         review_messages: list[dict[str, Any]] = [
             {
                 "role": "user",
@@ -308,7 +350,8 @@ def make_graph(
                 ),
             }
         ]
-        data = invoke_reviewer(review_messages)
+        with console.status("[dim]Reviewing...[/dim]", spinner="dots"):
+            data = invoke_reviewer(review_messages)
         review: Review = parse_review(data)
 
         if review.verdict != "revise":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,20 @@ def _print_status(
     console.print(f"[bold]Thinking:[/bold] {state}")
 
 
+def _spawn_index(workspace: Path, config: dict[str, Any], console: Console) -> threading.Thread:
+    """Start indexing in a daemon thread and return it."""
+
+    def _run() -> None:
+        try:
+            rag.index_workspace(workspace, config, console)
+        except Exception as exc:
+            console.print(f"[dim][rag] Indexing error: {exc}[/dim]")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return t
+
+
 def interactive_loop(
     config: dict[str, Any],
     handle: ServerHandle,
@@ -56,8 +71,9 @@ def interactive_loop(
 ) -> None:
     """Read-eval-print loop: accept tasks, run the agent, repeat."""
     console.print("\n[bold green]LoCoder ready.[/bold green] Type a task or [dim]/help[/dim].\n")
+    console.print("[dim]Type /reindex to build the knowledge base before your first task.[/dim]\n")
 
-    rag.index_workspace(workspace, config, console)
+    index_thread = threading.Thread(daemon=True)  # placeholder; replaced on /reindex
 
     model = planner_model_name(config)
     thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
@@ -89,7 +105,10 @@ def interactive_loop(
             continue
 
         if task == "/reindex":
-            rag.index_workspace(workspace, config, console)
+            if index_thread.is_alive():
+                console.print("[dim]Indexing already in progress...[/dim]")
+            else:
+                index_thread = _spawn_index(workspace, config, console)
             continue
 
         if task == "/history":

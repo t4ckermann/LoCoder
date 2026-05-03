@@ -127,16 +127,19 @@ One `llama-server` process, one port. Three roles share the same model via disti
 
 ### Dual
 
-Two `llama-server` processes on separate ports — one thinking-capable model for planning/review, one coding-specialized model for execution. Doubles RAM usage but gives each role its best-fit model.
+Two `llama-server` processes on separate ports — one thinking-capable model for planning/review, one coding-specialized model for execution.
+
+**RAM requirement:** both model weights must fit in memory simultaneously alongside the OS (~6 GB) and the fastembed embedding model (~500 MB). On a 24 GB machine two 7–8B models exceed the budget. Practical combinations:
+
+| Planner | Executor | Total weights | Min RAM |
+|---|---|---|---|
+| `qwen3-4b` (2.5 GB) | `qwen2.5-coder-7b` (5.3 GB) | ~7.8 GB | 16 GB |
+| `qwen3-8b` (5.5 GB) | `qwen2.5-coder-7b` (5.3 GB) | ~10.8 GB | 32 GB |
+| `gemma4-e4b` (5.5 GB) | `qwen2.5-coder-14b` (9.5 GB) | ~15 GB | 48 GB |
 
 Set `mode = "dual"` in `[inference]` and add `[inference.dual.planner]` / `[inference.dual.executor]` sections (see Config below). Run `locoder pull` for both models before starting.
 
-**Recommended combination:**
-
-| Role | Model | Why |
-|---|---|---|
-| Planner + Reviewer | `qwen3-8b` | Hybrid thinking mode; strong reasoning |
-| Executor | `qwen2.5-coder-7b` | Coding-specialized; fast tool calls |
+On machines with enough RAM but only one large model downloaded, single mode with `qwen3-8b` + `thinking_mode = true` is the recommended alternative — it handles both planning and coding in one process.
 
 Enable the reviewer with `reviewer_enabled = true` in `[agent]` config (default off).
 
@@ -193,6 +196,7 @@ reviewer_enabled = false  # set true to enable the [REVIEWER] quality-gate node
 top_k = 5
 chunk_size = 512
 chunk_overlap = 64
+embed_batch_size = 16   # chunks per embedding batch; reduce if OOM during indexing
 exclude = ["**/.git", "**/node_modules", "**/__pycache__"]
 
 [sandbox]
