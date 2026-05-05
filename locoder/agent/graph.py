@@ -1,29 +1,35 @@
 from __future__ import annotations
 
-import contextlib
 import json
-import shlex
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from langgraph.graph import END, StateGraph
 from openai import OpenAI
-from openai.types.chat import ChatCompletionMessageParam
 from rich.console import Console
 from typing_extensions import TypedDict
 
-from locoder.agent import history, prompts, sandbox, tools
+from locoder.agent import history, prompts
+from locoder.agent.dispatch import _MAX_OBS_CHARS, dispatch, fmt_args
+from locoder.agent.llm import _MAX_CONTEXT_MESSAGES, _trim_context, call_llm  # noqa: F401
 from locoder.agent.schema import Answer, Review, ToolCall, parse_plan, parse_review
+from locoder.agent.verify import run_verify
 from locoder.models.client import (
     active_model_name,
+    executor_model_name,
+    get_executor_client,
+    get_planner_client,
     get_sync_client,
+    planner_model_name,
     thinking_prefix,
 )
 
 _MAX_ITERATIONS = 30
 _MAX_REVIEWS = 2
+
+# Re-export for callers that import these constants from graph.
+__all__ = ["AgentState", "InvokeModel", "make_graph", "run_agent"]
 
 
 class AgentState(TypedDict):
@@ -38,121 +44,8 @@ class AgentState(TypedDict):
     review_count: int  # number of reviewer cycles completed
 
 
-def _call_llm(
-    client: OpenAI,
-    model: str,
-    messages: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Call llama-server with json_object response format; return parsed dict."""
-    resp = client.chat.completions.create(
-        model=model,
-        messages=cast(list[ChatCompletionMessageParam], messages),
-        response_format={"type": "json_object"},
-        temperature=0.2,
-    )
-    raw = (resp.choices[0].message.content or "{}").strip()
-    try:
-        return cast(dict[str, Any], json.loads(raw))
-    except json.JSONDecodeError:
-        return {"action": "answer", "content": raw}
-
-
-def _dispatch(
-    call: ToolCall,
-    workspace: Path,
-    config: dict[str, Any],
-    console: Console,
-) -> str:
-    """Execute a ToolCall and return its string result."""
-    name = call.tool
-    args = call.arguments
-    if name == "read_file":
-        return tools.read_file(str(args.get("path", "")), workspace)
-    if name == "write_file":
-        return tools.write_file(str(args.get("path", "")), str(args.get("content", "")), workspace)
-    if name == "run_code":
-        sb_cfg = config.get("sandbox", {})
-        result = sandbox.run_code(
-            str(args.get("code", "")),
-            str(args.get("language", "python")),
-            workspace,
-            timeout=int(sb_cfg.get("execution_timeout", 60)),
-            max_extensions=int(sb_cfg.get("max_extensions", 10)),
-            allow_network=bool(sb_cfg.get("allow_network", False)),
-            console=console,
-        )
-        return (
-            f"exit_code: {result['exit_code']}\n"
-            f"stdout:\n{result['stdout']}\n"
-            f"stderr:\n{result['stderr']}"
-        ).strip()
-    if name == "list_directory":
-        return tools.list_directory(str(args.get("path", ".")), workspace)
-    if name == "search_codebase":
-        return tools.search_codebase(
-            str(args.get("query", "")),
-            str(args.get("path", ".")),
-            workspace,
-        )
-    if name == "search_knowledge_base":
-        return tools.search_knowledge_base(str(args.get("query", "")), workspace, config)
-    return f"Unknown tool: {name!r}"
-
-
-def _verify_written_files(
-    written: list[str],
-    workspace: Path,
-    console: Console,
-    verify_config: dict[str, Any],
-) -> None:
-    """Run configured checks on files written during the agent run."""
-    if not written:
-        return
-
-    py_files = [f for f in written if f.endswith(".py")]
-    abs_py_files = [str(workspace / f) if not Path(f).is_absolute() else f for f in py_files]
-
-    if abs_py_files and verify_config.get("lint", True):
-        console.print("[dim][verify] ruff check...[/dim]")
-        r = subprocess.run(
-            ["ruff", "check", "--fix", *abs_py_files],
-            capture_output=True,
-            cwd=str(workspace),
-        )
-        if r.returncode != 0:
-            issues = r.stdout.decode(errors="replace")
-            console.print(f"[yellow][verify] ruff issues:\n{issues}[/yellow]")
-
-    if abs_py_files and verify_config.get("type_check", True):
-        console.print("[dim][verify] mypy...[/dim]")
-        r = subprocess.run(
-            ["mypy", *abs_py_files],
-            capture_output=True,
-            cwd=str(workspace),
-        )
-        if r.returncode != 0:
-            issues = r.stdout.decode(errors="replace")
-            console.print(f"[yellow][verify] mypy issues:\n{issues}[/yellow]")
-
-    if verify_config.get("tests", False):
-        test_cmd_str = str(verify_config.get("test_command", "pytest"))
-        console.print(f"[dim][verify] {test_cmd_str}...[/dim]")
-        r = subprocess.run(
-            shlex.split(test_cmd_str),
-            capture_output=True,
-            cwd=str(workspace),
-        )
-        if r.returncode != 0:
-            out = (r.stdout + r.stderr).decode(errors="replace")
-            console.print(f"[yellow][verify] test failures:\n{out}[/yellow]")
-        else:
-            console.print("[green][verify] all tests passed[/green]")
-
-    if verify_config.get("manual", False):
-        console.print("\n[bold yellow][verify] Manual review requested.[/bold yellow]")
-        console.print("[dim]Review the changes above, then press Enter to continue...[/dim]")
-        with contextlib.suppress(EOFError):
-            input()
+# Exported type for callers that want to inject a custom model function.
+InvokeModel = Callable[[list[dict[str, Any]]], dict[str, Any]]
 
 
 def make_graph(
@@ -162,16 +55,26 @@ def make_graph(
     thinking_mode: bool | None = None,
 ) -> Any:
     """Build and compile the agent LangGraph state machine."""
-    client = get_sync_client(config)
-    model = active_model_name(config)
+    dual_mode: bool = config.get("inference", {}).get("mode", "single") == "dual"
+
+    if dual_mode:
+        p_client = get_planner_client(config)
+        e_client = get_executor_client(config)
+        p_model = planner_model_name(config)
+        e_model = executor_model_name(config)
+    else:
+        p_client = get_sync_client(config)
+        e_client = p_client
+        p_model = active_model_name(config)
+        e_model = p_model
+
     if thinking_mode is None:
         thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
     else:
         thinking_enabled = thinking_mode
-    t_prefix = thinking_prefix(model, thinking_enabled)
-    base_prompt = prompts.build_system_prompt(workspace, t_prefix)
-    planner_system = "[PLANNER]\n" + base_prompt
-    executor_system = "[EXECUTOR]\n" + base_prompt
+
+    p_prefix = thinking_prefix(p_model, thinking_enabled)
+    e_prefix = thinking_prefix(e_model, thinking_enabled)
     reviewer_system = (
         "[REVIEWER]\n"
         "You are a code review agent. You review work produced by a coding agent and decide "
@@ -180,26 +83,40 @@ def make_graph(
     reviewer_enabled: bool = bool(config.get("agent", {}).get("reviewer_enabled", False))
     verify_config: dict[str, Any] = config.get("verify", {})
 
-    def _with_system(msgs: list[dict[str, Any]], system: str) -> list[dict[str, Any]]:
+    # /think-style prefixes (Qwen3) must appear in the last user message, not the system prompt.
+    # <|think|>-style prefixes (Gemma4) go in the system prompt as-is.
+    p_user_suffix = p_prefix if p_prefix.startswith("/") else ""
+    e_user_suffix = e_prefix if e_prefix.startswith("/") else ""
+    p_sys_prefix = "" if p_prefix.startswith("/") else p_prefix
+    e_sys_prefix = "" if e_prefix.startswith("/") else e_prefix
+    planner_system = "[PLANNER]\n" + prompts.build_system_prompt(workspace, p_sys_prefix)
+    executor_system = "[EXECUTOR]\n" + prompts.build_system_prompt(workspace, e_sys_prefix)
+
+    def _with_system(
+        msgs: list[dict[str, Any]], system: str, user_suffix: str = ""
+    ) -> list[dict[str, Any]]:
         if msgs and msgs[0].get("role") == "system":
-            return [{"role": "system", "content": system}, *msgs[1:]]
-        return [{"role": "system", "content": system}, *msgs]
+            result: list[dict[str, Any]] = [{"role": "system", "content": system}, *msgs[1:]]
+        else:
+            result = [{"role": "system", "content": system}, *msgs]
+        if user_suffix:
+            for i in range(len(result) - 1, -1, -1):
+                if result[i].get("role") == "user":
+                    result[i] = {**result[i], "content": f"{result[i]['content']}\n{user_suffix}"}
+                    break
+        return result
 
-    def invoke_planner(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(client, model, _with_system(messages, planner_system))
+    def _invoke(
+        client: OpenAI, model: str, msgs: list[dict[str, Any]], system: str, suffix: str = ""
+    ) -> dict[str, Any]:
+        return call_llm(client, model, _trim_context(_with_system(msgs, system, suffix)))
 
-    def invoke_executor(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(client, model, _with_system(messages, executor_system))
-
-    def invoke_reviewer(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(client, model, _with_system(messages, reviewer_system))
-
-    # --- clarify node ---
     def clarify_node(state: AgentState) -> AgentState:
         clarify_messages: list[dict[str, Any]] = [
             {"role": "user", "content": prompts.build_clarify_prompt(state["task"])},
         ]
-        data = invoke_planner(clarify_messages)
+        with console.status("[dim]Thinking...[/dim]", spinner="dots"):
+            data = _invoke(p_client, p_model, clarify_messages, planner_system, p_user_suffix)
         assumptions: list[str] = data.get("assumptions", [])
 
         if assumptions:
@@ -217,39 +134,38 @@ def make_graph(
             task = f"{task}\n\nCorrection from user: {correction}"
             console.print("[dim]Task updated with your correction.[/dim]")
 
-        seed_messages: list[dict[str, Any]] = [
-            {"role": "user", "content": task},
-        ]
-        return {**state, "task": task, "messages": seed_messages}
+        return {**state, "task": task, "messages": [{"role": "user", "content": task}]}
 
-    # --- plan node ---
     def plan_node(state: AgentState) -> AgentState:
         if state["iterations"] >= _MAX_ITERATIONS:
             console.print("[yellow]Maximum iterations reached — stopping.[/yellow]")
             return {**state, "done": True, "answer": "Stopped: maximum iterations reached."}
 
-        console.print(f"[dim][plan] thinking... (step {state['iterations'] + 1})[/dim]")
-        data = invoke_executor(state["messages"])
+        label = f"[dim]Working... (step {state['iterations'] + 1})[/dim]"
+        with console.status(label, spinner="dots"):
+            data = _invoke(e_client, e_model, state["messages"], executor_system, e_user_suffix)
         step = parse_plan(data)
 
         if isinstance(step, Answer):
             return {**state, "done": True, "answer": step.content}
-
         return {**state, "pending_tool": {"tool": step.tool, "arguments": step.arguments}}
 
-    # --- act node ---
     def act_node(state: AgentState) -> AgentState:
         tool_name = state["pending_tool"]["tool"]
         arguments = dict(state["pending_tool"].get("arguments") or {})
         call = ToolCall(tool=tool_name, arguments=arguments)
-        console.print(f"[bold blue][act][/bold blue]  {call.tool}({_fmt_args(call.arguments)})")
-        result = _dispatch(call, workspace, config, console)
+        console.print(f"[bold blue][act][/bold blue]  {call.tool}({fmt_args(call.arguments)})")
+        result = dispatch(call, workspace, config, console)
         return {**state, "last_observation": result}
 
-    # --- observe node ---
     def observe_node(state: AgentState) -> AgentState:
         tool_name = state["pending_tool"]["tool"]
         arguments = dict(state["pending_tool"].get("arguments") or {})
+
+        obs = state["last_observation"]
+        if len(obs) > _MAX_OBS_CHARS:
+            total = len(state["last_observation"])
+            obs = obs[:_MAX_OBS_CHARS] + f"\n... (truncated — {total} chars total)"
 
         assistant_msg: dict[str, Any] = {
             "role": "assistant",
@@ -259,7 +175,7 @@ def make_graph(
         }
         tool_msg: dict[str, Any] = {
             "role": "user",
-            "content": f"[Tool result: {tool_name}]\n{state['last_observation']}",
+            "content": f"[Tool result: {tool_name}]\n{obs}",
         }
 
         written = list(state["written_files"])
@@ -277,13 +193,11 @@ def make_graph(
             "last_observation": "",
         }
 
-    # --- reviewer node ---
     def reviewer_node(state: AgentState) -> AgentState:
         if state["review_count"] >= _MAX_REVIEWS:
             console.print("[dim][review] Max reviews reached — accepting.[/dim]")
             return state
 
-        console.print("[dim][review] Reviewing work...[/dim]")
         review_messages: list[dict[str, Any]] = [
             {
                 "role": "user",
@@ -292,7 +206,8 @@ def make_graph(
                 ),
             }
         ]
-        data = invoke_reviewer(review_messages)
+        with console.status("[dim]Reviewing...[/dim]", spinner="dots"):
+            data = _invoke(p_client, p_model, review_messages, reviewer_system)
         review: Review = parse_review(data)
 
         if review.verdict != "revise":
@@ -316,10 +231,9 @@ def make_graph(
             "messages": [*state["messages"], feedback_msg],
         }
 
-    # --- verify node ---
     def verify_node(state: AgentState) -> AgentState:
         if state["written_files"]:
-            _verify_written_files(state["written_files"], workspace, console, verify_config)
+            run_verify(state["written_files"], workspace, console, verify_config)
         return state
 
     def _route_plan(state: AgentState) -> str:
@@ -347,19 +261,6 @@ def make_graph(
     graph.add_conditional_edges("reviewer", _route_reviewer, {"verify": "verify", "plan": "plan"})
     graph.add_edge("verify", END)
     return graph.compile()
-
-
-def _fmt_args(args: dict[str, Any]) -> str:
-    """Format tool arguments for display, truncating long values."""
-    parts: list[str] = []
-    for k, v in args.items():
-        s = repr(v)
-        parts.append(f"{k}={s[:60]}{'...' if len(s) > 60 else ''}")
-    return ", ".join(parts)
-
-
-# Exported type for callers that want to inject a custom model function (Phase 9).
-InvokeModel = Callable[[list[dict[str, Any]]], dict[str, Any]]
 
 
 def run_agent(

@@ -127,5 +127,15 @@
     "params_b": 4.0,
     "available_quants": ["q4_k_m", "q5_k_m", "q6_k", "q8_0"],
     "notes": "Qwen3 4B dense. Good coding quality in the 4 GB RAM tier. Native tool calling. Hybrid thinking mode."
+  },
+  "qwen3-coder-next": {
+    "repo": "Qwen/Qwen3-Coder-Next-GGUF",
+    "default_quant": "q5_k_m",
+    "filename": "Qwen3-Coder-Next-{QUANT}/Qwen3-Coder-Next-{QUANT}-{SHARD:05d}-of-{TOTAL:05d}.gguf",
+    "shard_count": 4,
+    "ram_tier": "64gb",
+    "params_b": 79.7,
+    "available_quants": ["q8_0", "q6_k", "q5_k_m", "q5_0", "q4_k_m"],
+    "notes": "Qwen3 Coder Next 80B dense. Strong coding performance. Native tool calling. Hybrid thinking mode."
   }
 }

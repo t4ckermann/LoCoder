@@ -20,6 +20,11 @@ if TYPE_CHECKING:
 
 _MAX_FILES_WARN = 5_000
 
+# Module-level caches — avoids re-loading the ~250 MB fastembed model and re-opening
+# the ChromaDB client on every search() call within a session.
+_embedder_cache: dict[str, Any] = {}
+_chroma_client_cache: dict[str, Any] = {}  # keyed on vector_store_dir string
+
 # Suppress chromadb telemetry. Must be set before `import chromadb` (which is a lazy import
 # inside functions below). posthog v7 also changed capture() to 1-arg; chromadb calls the old
 # 3-arg form and logs the resulting TypeError as an error — silence that logger too.
@@ -96,6 +101,23 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
+def _get_embedder(model_name: str, console: Console | None = None) -> TextEmbedding:
+    """Return a cached TextEmbedding instance, loading it once per process."""
+    if model_name not in _embedder_cache:
+        _embedder_cache[model_name] = _load_embedder(model_name, console)
+    return _embedder_cache[model_name]  # type: ignore[no-any-return]
+
+
+def _get_chroma_client(vector_store_dir: Path) -> Any:
+    """Return a cached ChromaDB PersistentClient, opening it once per vector store path."""
+    import chromadb
+
+    key = str(vector_store_dir)
+    if key not in _chroma_client_cache:
+        _chroma_client_cache[key] = chromadb.PersistentClient(path=key)
+    return _chroma_client_cache[key]
+
+
 def _load_embedder(model_name: str, console: Console | None, _retry: bool = False) -> TextEmbedding:
     """Return a TextEmbedding instance, auto-clearing a partial cache on first failure."""
     from fastembed import TextEmbedding
@@ -121,9 +143,8 @@ def _load_embedder(model_name: str, console: Console | None, _retry: bool = Fals
 def index_workspace(
     workspace: Path, config: dict[str, Any], console: Console | None = None
 ) -> None:
-    """Chunk and upsert all workspace files into ChromaDB. Imports are deferred."""
+    """Chunk and upsert changed workspace files into ChromaDB. Imports are deferred."""
     # Late imports — ChromaDB adds ~1-2s startup cost; don't pay it at module load.
-    import chromadb
 
     rag_cfg: dict[str, Any] = config.get("rag", {})
     vector_store_dir = Path(
@@ -141,6 +162,50 @@ def index_workspace(
             "Add patterns to [rag] exclude in .locoder.toml to skip build artefacts.[/yellow]"
         )
 
+    # Build rel -> mtime map for current files.
+    file_mtimes: dict[str, float] = {}
+    for fp in files:
+        with contextlib.suppress(OSError):
+            file_mtimes[str(fp.relative_to(workspace))] = fp.stat().st_mtime
+
+    # Open collection first so we can diff against stored mtimes before loading the model.
+    vector_store_dir.mkdir(parents=True, exist_ok=True)
+    client = _get_chroma_client(vector_store_dir)
+    collection = client.get_or_create_collection(_collection_name(workspace))
+
+    existing = collection.get(include=["metadatas"])
+    existing_ids: list[str] = existing.get("ids") or []
+    existing_metas: list[Any] = existing.get("metadatas") or []
+
+    # Derive the highest mtime we already have indexed for each file.
+    indexed_mtimes: dict[str, float] = {}
+    for meta in existing_metas:
+        if not isinstance(meta, dict):
+            continue
+        rel = str(meta.get("file", ""))
+        mtime = float(meta.get("mtime", 0.0))
+        if rel and mtime > indexed_mtimes.get(rel, 0.0):
+            indexed_mtimes[rel] = mtime
+
+    changed_rels = [rel for rel, mt in file_mtimes.items() if mt > indexed_mtimes.get(rel, 0.0)]
+    removed_rels = {rel for rel in indexed_mtimes if rel not in file_mtimes}
+
+    # Purge chunks for deleted or modified files.
+    stale_rels = set(changed_rels) | removed_rels
+    if stale_rels:
+        ids_to_delete = [
+            eid
+            for eid, emeta in zip(existing_ids, existing_metas, strict=False)
+            if isinstance(emeta, dict) and str(emeta.get("file", "")) in stale_rels
+        ]
+        if ids_to_delete:
+            collection.delete(ids=ids_to_delete)
+
+    if not changed_rels:
+        if console is not None:
+            console.print(f"[dim][rag] Index up-to-date ({len(files)} files).[/dim]")
+        return
+
     model_slug = "models--" + embed_model_name.replace("/", "--")
     if not (_fastembed_cache_dir() / model_slug).exists() and console is not None:
         console.print(
@@ -150,25 +215,21 @@ def index_workspace(
 
     if console is not None:
         console.print(
-            f"[dim][rag] Indexing {len(files)} files (model: {embed_model_name})...[/dim]"
+            f"[dim][rag] Indexing {len(changed_rels)}/{len(files)} files "
+            f"(model: {embed_model_name})...[/dim]"
         )
-
-    embedder = _load_embedder(embed_model_name, console)
-    vector_store_dir.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(vector_store_dir))
-    collection = client.get_or_create_collection(_collection_name(workspace))
 
     documents: list[str] = []
     metadatas: list[_Metadata] = []
     ids: list[str] = []
 
-    for file_path in files:
+    for rel in changed_rels:
+        file_path = workspace / rel
         try:
             text = file_path.read_text(errors="replace")
         except OSError:
             continue
-        rel = str(file_path.relative_to(workspace))
-        mtime: float = file_path.stat().st_mtime
+        mtime = file_mtimes[rel]
         for i, chunk in enumerate(_chunk_text(text, chunk_size, overlap)):
             documents.append(chunk)
             metadatas.append({"file": rel, "chunk": i, "mtime": mtime})
@@ -177,8 +238,11 @@ def index_workspace(
     if not documents:
         return
 
-    batch = 100
-    for start in range(0, len(documents), batch):
+    embedder = _get_embedder(embed_model_name, console)
+
+    total_chunks = len(documents)
+    batch: int = int(rag_cfg.get("embed_batch_size", 16))
+    for start in range(0, total_chunks, batch):
         batch_docs = documents[start : start + batch]
         raw_embeddings = [list(e) for e in embedder.embed(batch_docs)]
         # chromadb accepts Sequence[float] per chunk; cast silences the ndarray overload mismatch
@@ -186,18 +250,21 @@ def index_workspace(
         collection.upsert(
             ids=ids[start : start + batch],
             documents=batch_docs,
-            embeddings=embeddings,  # type: ignore[arg-type]
-            metadatas=metadatas[start : start + batch],  # type: ignore[arg-type]
+            embeddings=embeddings,
+            metadatas=metadatas[start : start + batch],
         )
+        if console is not None:
+            done = min(start + batch, total_chunks)
+            console.print(f"[dim][rag] Embedded {done}/{total_chunks} chunks...[/dim]")
 
     if console is not None:
-        console.print(f"[dim][rag] Done — {len(documents)} chunks from {len(files)} files.[/dim]")
+        console.print(
+            f"[dim][rag] Done — {total_chunks} chunks from {len(changed_rels)} files.[/dim]"
+        )
 
 
 def search(query: str, config: dict[str, Any], workspace: Path) -> str:
     """Query the ChromaDB collection; warn on stale source files."""
-    import chromadb
-
     rag_cfg: dict[str, Any] = config.get("rag", {})
     vector_store_dir = Path(
         str(rag_cfg.get("vector_store_dir", "~/.locoder/vectorstore"))
@@ -209,17 +276,17 @@ def search(query: str, config: dict[str, Any], workspace: Path) -> str:
         return "Knowledge base not yet indexed — run /reindex or restart LoCoder."
 
     try:
-        client = chromadb.PersistentClient(path=str(vector_store_dir))
+        client = _get_chroma_client(vector_store_dir)
         collection = client.get_collection(_collection_name(workspace))
     except Exception:
         return "Knowledge base not yet indexed — run /reindex or restart LoCoder."
 
-    embedder = _load_embedder(embed_model_name, None)
+    embedder = _get_embedder(embed_model_name)
     query_vec: list[float] = [float(v) for v in next(iter(embedder.embed([query])))]
 
     _include: list[IncludeEnum] = ["documents", "metadatas"]  # type: ignore[list-item]
     results = collection.query(
-        query_embeddings=[query_vec],  # type: ignore[arg-type]
+        query_embeddings=[query_vec],
         n_results=top_k,
         include=_include,
     )

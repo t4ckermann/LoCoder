@@ -31,7 +31,7 @@ def is_installed(model_id: str) -> bool:
 
 
 def download(name: str, quant: str | None = None, available_gb: float | None = None) -> Path:
-    """Download a model GGUF.
+    """Download a model GGUF (single-file or sharded).
 
     available_gb: effective RAM/VRAM available for quant selection. When None and quant
     is also None, falls back to the registry's default_quant.
@@ -48,65 +48,81 @@ def download(name: str, quant: str | None = None, available_gb: float | None = N
         resolved_quant = select_quant(name, available_gb)
     else:
         resolved_quant = str(entry["default_quant"])
-    # Support {quant} (lowercase, e.g. Qwen) and {QUANT} (uppercase, e.g. bartowski)
-    filename: str = str(entry["filename"]).format(
-        quant=resolved_quant, QUANT=resolved_quant.upper()
-    )
+
     repo_id: str = str(entry["repo"])
+    shard_count = int(entry.get("shard_count", 1))
     dest_dir = model_dir(name)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / filename
 
-    if dest_path.exists():
-        return dest_path
+    # Build (hf_path, local_dest) for every shard.
+    # {SHARD}/{TOTAL} placeholders are used for multi-shard models; extra kwargs are
+    # silently ignored by str.format() for single-file entries that lack them.
+    shards: list[tuple[str, Path]] = []
+    for shard_n in range(1, shard_count + 1):
+        # Support {quant} (lowercase), {QUANT} (uppercase), {SHARD}, {TOTAL}
+        hf_path = str(entry["filename"]).format(
+            quant=resolved_quant,
+            QUANT=resolved_quant.upper(),
+            SHARD=shard_n,
+            TOTAL=shard_count,
+        )
+        local_path = dest_dir / Path(hf_path).name  # strip any HF subdirectory
+        shards.append((hf_path, local_path))
 
-    url = hf_hub_url(repo_id=repo_id, filename=filename)
+    first_hf_path, first_local = shards[0]
 
-    # Pre-flight: HEAD request to catch wrong repo/filename before starting the download.
-    # HuggingFace returns 401 or 404 for missing files — surface a clear message either way.
-    head = urllib.request.Request(url, headers={"User-Agent": "locoder"}, method="HEAD")
+    # Pre-flight HEAD on first shard to catch wrong repo/filename early.
+    first_url = hf_hub_url(repo_id=repo_id, filename=first_hf_path)
+    head = urllib.request.Request(first_url, headers={"User-Agent": "locoder"}, method="HEAD")
     try:
         urllib.request.urlopen(head, timeout=15)
     except HTTPError as exc:
         raise ValueError(
-            f"File '{filename}' not found in repo '{repo_id}' (HTTP {exc.code}). "
+            f"File '{first_hf_path}' not found in repo '{repo_id}' (HTTP {exc.code}). "
             "The registry entry may be outdated — run `locoder registry update` to refresh."
         ) from None
 
-    req = urllib.request.Request(url, headers={"User-Agent": "locoder"})
-
-    try:
-        with Progress(
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(),
-            DownloadColumn(),
-            TransferSpeedColumn(),
-            TimeRemainingColumn(),
-        ) as progress:
-            task_id = progress.add_task(f"Downloading {filename}", total=None)
-
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                total = resp.headers.get("Content-Length")
-                total_bytes = int(total) if total else None
-                progress.update(task_id, total=total_bytes)
-
-                with dest_path.open("wb") as f:
-                    downloaded = 0
-                    chunk_size = 65536
-                    while True:
-                        chunk = resp.read(chunk_size)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        progress.update(task_id, completed=downloaded)
-    except BaseException:
-        # Remove partial file so is_installed() doesn't return a false positive
+    for i, (hf_path, dest_path) in enumerate(shards, 1):
         if dest_path.exists():
-            dest_path.unlink()
-        raise
+            continue
 
-    return dest_path
+        url = hf_hub_url(repo_id=repo_id, filename=hf_path)
+        req = urllib.request.Request(url, headers={"User-Agent": "locoder"})
+        label = (
+            f"Downloading {dest_path.name} ({i}/{shard_count})"
+            if shard_count > 1
+            else f"Downloading {dest_path.name}"
+        )
+
+        try:
+            with Progress(
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeRemainingColumn(),
+            ) as progress:
+                task_id = progress.add_task(label, total=None)
+
+                with urllib.request.urlopen(req, timeout=300) as resp:
+                    total = resp.headers.get("Content-Length")
+                    total_bytes = int(total) if total else None
+                    progress.update(task_id, total=total_bytes)
+
+                    with dest_path.open("wb") as f:
+                        done = 0
+                        while chunk := resp.read(65536):
+                            f.write(chunk)
+                            done += len(chunk)
+                            progress.update(task_id, completed=done)
+        except BaseException:
+            # Remove partial shard so is_installed() doesn't return a false positive.
+            # Already-completed shards are kept so a retry can resume from this shard.
+            if dest_path.exists():
+                dest_path.unlink()
+            raise
+
+    return first_local
 
 
 def remove(name: str) -> None:

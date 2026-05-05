@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,12 @@ from rich.console import Console
 
 from locoder.agent import history, rag
 from locoder.agent.graph import run_agent
-from locoder.models.client import active_model_name, supports_thinking
+from locoder.models.client import (
+    active_model_name,
+    executor_model_name,
+    planner_model_name,
+    supports_thinking,
+)
 from locoder.server.launcher import ServerHandle
 
 _HELP_TEXT = """
@@ -28,9 +34,33 @@ def _print_status(
     console: Console,
     thinking_enabled: bool,
 ) -> None:
-    console.print(f"[bold]Model:[/bold] {active_model_name(config)}  port={handle.port}")
+    inf = config.get("inference", {})
+    if inf.get("mode", "single") == "dual":
+        dual = inf["dual"]
+        console.print(
+            f"[bold]Planner:[/bold] {planner_model_name(config)}  port={dual['planner']['port']}"
+        )
+        console.print(
+            f"[bold]Executor:[/bold] {executor_model_name(config)}  port={dual['executor']['port']}"
+        )
+    else:
+        console.print(f"[bold]Model:[/bold] {active_model_name(config)}  port={handle.port}")
     state = "[green]on[/green]" if thinking_enabled else "[dim]off[/dim]"
     console.print(f"[bold]Thinking:[/bold] {state}")
+
+
+def _spawn_index(workspace: Path, config: dict[str, Any], console: Console) -> threading.Thread:
+    """Start indexing in a daemon thread and return it."""
+
+    def _run() -> None:
+        try:
+            rag.index_workspace(workspace, config, console)
+        except Exception as exc:
+            console.print(f"[dim][rag] Indexing error: {exc}[/dim]")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return t
 
 
 def interactive_loop(
@@ -41,10 +71,11 @@ def interactive_loop(
 ) -> None:
     """Read-eval-print loop: accept tasks, run the agent, repeat."""
     console.print("\n[bold green]LoCoder ready.[/bold green] Type a task or [dim]/help[/dim].\n")
+    console.print("[dim]Type /reindex to build the knowledge base before your first task.[/dim]\n")
 
-    rag.index_workspace(workspace, config, console)
+    index_thread = threading.Thread(daemon=True)  # placeholder; replaced on /reindex
 
-    model = active_model_name(config)
+    model = planner_model_name(config)
     thinking_enabled: bool = bool(config.get("agent", {}).get("thinking_mode", False))
 
     while True:
@@ -74,7 +105,10 @@ def interactive_loop(
             continue
 
         if task == "/reindex":
-            rag.index_workspace(workspace, config, console)
+            if index_thread.is_alive():
+                console.print("[dim]Indexing already in progress...[/dim]")
+            else:
+                index_thread = _spawn_index(workspace, config, console)
             continue
 
         if task == "/history":
