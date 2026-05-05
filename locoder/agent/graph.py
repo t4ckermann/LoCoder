@@ -29,6 +29,8 @@ from locoder.models.client import (
 
 _MAX_ITERATIONS = 30
 _MAX_REVIEWS = 2
+_MAX_OBS_CHARS = 8_000  # cap tool results appended to messages (~2k tokens)
+_MAX_CONTEXT_MESSAGES = 40  # system + first task + last N; prevents KV-cache RAM blowup
 
 
 class AgentState(TypedDict):
@@ -41,6 +43,15 @@ class AgentState(TypedDict):
     pending_tool: dict[str, Any]  # {"tool": str, "arguments": dict} when a call is pending
     last_observation: str  # output from the last tool dispatch
     review_count: int  # number of reviewer cycles completed
+
+
+def _trim_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep system msg + first user task + most recent exchanges to stay within context window."""
+    if len(messages) <= _MAX_CONTEXT_MESSAGES:
+        return messages
+    head = messages[:2]  # system prompt + first user task
+    tail = messages[-(_MAX_CONTEXT_MESSAGES - 2) :]
+    return head + tail
 
 
 def _strip_thinking(text: str) -> str:
@@ -243,13 +254,15 @@ def make_graph(
         return result
 
     def invoke_planner(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(p_client, p_model, _with_system(messages, planner_system, p_user_suffix))
+        prepared = _trim_context(_with_system(messages, planner_system, p_user_suffix))
+        return _call_llm(p_client, p_model, prepared)
 
     def invoke_executor(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(e_client, e_model, _with_system(messages, executor_system, e_user_suffix))
+        prepared = _trim_context(_with_system(messages, executor_system, e_user_suffix))
+        return _call_llm(e_client, e_model, prepared)
 
     def invoke_reviewer(messages: list[dict[str, Any]]) -> dict[str, Any]:
-        return _call_llm(p_client, p_model, _with_system(messages, reviewer_system))
+        return _call_llm(p_client, p_model, _trim_context(_with_system(messages, reviewer_system)))
 
     # --- clarify node ---
     def clarify_node(state: AgentState) -> AgentState:
@@ -310,6 +323,11 @@ def make_graph(
         tool_name = state["pending_tool"]["tool"]
         arguments = dict(state["pending_tool"].get("arguments") or {})
 
+        obs = state["last_observation"]
+        if len(obs) > _MAX_OBS_CHARS:
+            total = len(state["last_observation"])
+            obs = obs[:_MAX_OBS_CHARS] + f"\n... (truncated — {total} chars total)"
+
         assistant_msg: dict[str, Any] = {
             "role": "assistant",
             "content": json.dumps(
@@ -318,7 +336,7 @@ def make_graph(
         }
         tool_msg: dict[str, Any] = {
             "role": "user",
-            "content": f"[Tool result: {tool_name}]\n{state['last_observation']}",
+            "content": f"[Tool result: {tool_name}]\n{obs}",
         }
 
         written = list(state["written_files"])

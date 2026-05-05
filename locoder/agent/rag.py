@@ -20,6 +20,11 @@ if TYPE_CHECKING:
 
 _MAX_FILES_WARN = 5_000
 
+# Module-level caches — avoids re-loading the ~250 MB fastembed model and re-opening
+# the ChromaDB client on every search() call within a session.
+_embedder_cache: dict[str, Any] = {}
+_chroma_client_cache: dict[str, Any] = {}  # keyed on vector_store_dir string
+
 # Suppress chromadb telemetry. Must be set before `import chromadb` (which is a lazy import
 # inside functions below). posthog v7 also changed capture() to 1-arg; chromadb calls the old
 # 3-arg form and logs the resulting TypeError as an error — silence that logger too.
@@ -96,6 +101,23 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
+def _get_embedder(model_name: str, console: Console | None = None) -> TextEmbedding:
+    """Return a cached TextEmbedding instance, loading it once per process."""
+    if model_name not in _embedder_cache:
+        _embedder_cache[model_name] = _load_embedder(model_name, console)
+    return _embedder_cache[model_name]  # type: ignore[no-any-return]
+
+
+def _get_chroma_client(vector_store_dir: Path) -> Any:
+    """Return a cached ChromaDB PersistentClient, opening it once per vector store path."""
+    import chromadb
+
+    key = str(vector_store_dir)
+    if key not in _chroma_client_cache:
+        _chroma_client_cache[key] = chromadb.PersistentClient(path=key)
+    return _chroma_client_cache[key]
+
+
 def _load_embedder(model_name: str, console: Console | None, _retry: bool = False) -> TextEmbedding:
     """Return a TextEmbedding instance, auto-clearing a partial cache on first failure."""
     from fastembed import TextEmbedding
@@ -123,7 +145,6 @@ def index_workspace(
 ) -> None:
     """Chunk and upsert changed workspace files into ChromaDB. Imports are deferred."""
     # Late imports — ChromaDB adds ~1-2s startup cost; don't pay it at module load.
-    import chromadb
 
     rag_cfg: dict[str, Any] = config.get("rag", {})
     vector_store_dir = Path(
@@ -149,10 +170,10 @@ def index_workspace(
 
     # Open collection first so we can diff against stored mtimes before loading the model.
     vector_store_dir.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(vector_store_dir))
+    client = _get_chroma_client(vector_store_dir)
     collection = client.get_or_create_collection(_collection_name(workspace))
 
-    existing = collection.get(include=["metadatas"])  # type: ignore[list-item]
+    existing = collection.get(include=["metadatas"])
     existing_ids: list[str] = existing.get("ids") or []
     existing_metas: list[Any] = existing.get("metadatas") or []
 
@@ -217,7 +238,7 @@ def index_workspace(
     if not documents:
         return
 
-    embedder = _load_embedder(embed_model_name, console)
+    embedder = _get_embedder(embed_model_name, console)
 
     total_chunks = len(documents)
     batch: int = int(rag_cfg.get("embed_batch_size", 16))
@@ -229,8 +250,8 @@ def index_workspace(
         collection.upsert(
             ids=ids[start : start + batch],
             documents=batch_docs,
-            embeddings=embeddings,  # type: ignore[arg-type]
-            metadatas=metadatas[start : start + batch],  # type: ignore[arg-type]
+            embeddings=embeddings,
+            metadatas=metadatas[start : start + batch],
         )
         if console is not None:
             done = min(start + batch, total_chunks)
@@ -244,8 +265,6 @@ def index_workspace(
 
 def search(query: str, config: dict[str, Any], workspace: Path) -> str:
     """Query the ChromaDB collection; warn on stale source files."""
-    import chromadb
-
     rag_cfg: dict[str, Any] = config.get("rag", {})
     vector_store_dir = Path(
         str(rag_cfg.get("vector_store_dir", "~/.locoder/vectorstore"))
@@ -257,17 +276,17 @@ def search(query: str, config: dict[str, Any], workspace: Path) -> str:
         return "Knowledge base not yet indexed — run /reindex or restart LoCoder."
 
     try:
-        client = chromadb.PersistentClient(path=str(vector_store_dir))
+        client = _get_chroma_client(vector_store_dir)
         collection = client.get_collection(_collection_name(workspace))
     except Exception:
         return "Knowledge base not yet indexed — run /reindex or restart LoCoder."
 
-    embedder = _load_embedder(embed_model_name, None)
+    embedder = _get_embedder(embed_model_name)
     query_vec: list[float] = [float(v) for v in next(iter(embedder.embed([query])))]
 
     _include: list[IncludeEnum] = ["documents", "metadatas"]  # type: ignore[list-item]
     results = collection.query(
-        query_embeddings=[query_vec],  # type: ignore[arg-type]
+        query_embeddings=[query_vec],
         n_results=top_k,
         include=_include,
     )
